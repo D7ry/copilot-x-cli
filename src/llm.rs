@@ -158,6 +158,8 @@ impl CopilotChat {
         }
 
         // read a line that was sent back. copilot responses are sent in lines json-like bytes
+        // each line returned by a api is either empty or a json-object. The line is also prefixed
+        // with data: so we need to remove that prefix
         fn read_line(line: &str) -> Option<String> {
             // println!("line: {:?}", line);
             if !line.contains("data") {
@@ -190,8 +192,6 @@ impl CopilotChat {
                 return None;
             }
             let word = word.unwrap().to_string();
-            print!("{}", word);
-            io::stdout().flush().unwrap();
 
             return Some(word);
         }
@@ -222,6 +222,8 @@ impl CopilotChat {
                 for i in 0..iter_range {
                     let partial_ai_response = read_line(lines[i]);
                     if partial_ai_response.is_some() {
+                        print!("{}", &partial_ai_response.clone().unwrap());
+                        io::stdout().flush().unwrap();
                         ai_response.push_str(&partial_ai_response.unwrap());
                     }
                 }
