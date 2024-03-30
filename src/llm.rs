@@ -14,7 +14,7 @@ pub trait LLM {
 
 pub struct CopilotChat {
     jwt_token: Option<String>,
-    request_headesr: HeaderMap,
+    request_header: HeaderMap,
 }
 
 impl LLM for CopilotChat {
@@ -48,11 +48,14 @@ impl CopilotChat {
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
         self.jwt_token = Some(jwt);
+
+        // Update the request header with the new jwt token
+        let bearer_token : String = format!("Bearer {jwt_token}", jwt_token = self.jwt_token.as_ref().unwrap());
+        self.request_header.insert("authorization", HeaderValue::from_str(&bearer_token).unwrap());
         println!("jwt_token: {}", self.jwt_token.as_ref().unwrap());
     }
 
     fn stream_copilot_request(&self, question: &str) -> () {
-        let mut headers = HeaderMap::new();
     }
 
     async fn get_jwt_token() -> Option<String> {
@@ -143,7 +146,12 @@ impl CopilotChat {
             HeaderValue::from_static("GithubCopilot/0.1.2023052205"),
         );
         map.insert("accept", HeaderValue::from_static("*/*"));
-        let mut ret = CopilotChat { jwt_token: None, request_headesr: map};
+
+        let mut ret = CopilotChat {
+            jwt_token: None,
+            request_header: map,
+        };
+
         ret.update_jwt_token();
 
         return ret;
