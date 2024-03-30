@@ -87,7 +87,7 @@ pub enum CodeBlockBuilderState {
 
 pub struct CodeBlock {
     code: String,
-    language_extension: String,
+    language_extension: String, // (c, rs, py, etc)
 }
 
 pub struct CodeBlockBuilder {
@@ -126,7 +126,14 @@ impl CodeBlockBuilder {
         self.curr_code_block.code.clear();
         self.curr_code_block.language_extension.clear();
     }
-    
+
+    /**
+     * Ingests a character and tries to build a code block from it.
+     * Returns:
+     * (1. the current state of the code block builder,
+     * (2. the code block if it was built, None otherwise. Each code block is built when the code block ends,
+     * (3. the code line that just ended and the language of the code block if the code line ended , and the code block is still being built. This is useful for stream printing syntax-highlighted code lines.
+     */
     pub fn build_codeblock_from_char(
         &mut self,
         ch: char,
