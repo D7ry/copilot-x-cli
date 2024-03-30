@@ -5,8 +5,17 @@ use clipboard::ClipboardContext;
 use clipboard::ClipboardProvider;
 use llm::{CopilotChat, LLM};
 
-use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
 use std::io::{self, Write};
+
+fn llm_response_callback(response: &str) {
+    print!("{}", response);
+    io::stdout().flush().unwrap();
+}
+
+fn print_separator() {
+    println!("----------------------------------------");
+    io::stdout().flush().unwrap();
+}
 
 fn main_loop(conversation_starter: Option<String>) {
     let mut llm = CopilotChat::new();
@@ -14,7 +23,8 @@ fn main_loop(conversation_starter: Option<String>) {
 
     match conversation_starter {
         Some(msg) => {
-            let _response = llm.ask(&msg);
+            let _response = llm.ask(&msg, llm_response_callback);
+            print_separator();
         }
         None => {}
     }
@@ -28,25 +38,45 @@ fn main_loop(conversation_starter: Option<String>) {
 
         /* Handle special commands */
         {
-
-            /* yank last code block on \y */
-            if input.contains("\\y") {
-                let code_blocks = llm.get_code_blocks();
-                if code_blocks.len() == 0 {
-                    println!("No code blocks to yank");
-                    continue;
-                }
-                let last_code_block = code_blocks.into_iter().last().unwrap();
-                let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-                match ctx.set_contents(last_code_block.1.to_string()) {
-                    Ok(_) => {
-                        println!("Yanked code block to clipboard");
+            if input.starts_with("\\") && input.len() == 2 {
+                match input.as_str() {
+                    "\\y" => {
+                        let code_blocks = llm.get_code_blocks();
+                        if code_blocks.len() == 0 {
+                            println!("No code blocks to yank");
+                            print_separator();
+                            continue;
+                        }
+                        let last_code_block = code_blocks.into_iter().last().unwrap();
+                        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+                        match ctx.set_contents(last_code_block.1.to_string()) {
+                            Ok(_) => {
+                                println!("Yanked {} code block to clipboard", last_code_block.0);
+                                print_separator();
+                            }
+                            Err(_) => {
+                                println!("Error: Could not yank code block to clipboard");
+                            }
+                        }
+                        continue;
                     }
-                    Err(_) => {
-                        println!("Error: Could not yank code block to clipboard");
+                    "\\p" => {
+                        // do nothing, this is handled later
+                    }
+                    "\\h" => {
+                        println!("Special commands:");
+                        println!("\\q - Quit");
+                        println!("\\h - Help");
+                        println!("\\y - Yank last code block to clipboard");
+                        print_separator();
+                        continue;
+                    }
+                    _ => {
+                        println!("Unknown comnad. Type \\h for help");
+                        print_separator();
+                        continue;
                     }
                 }
-                continue;
             }
         }
 
@@ -64,7 +94,10 @@ fn main_loop(conversation_starter: Option<String>) {
             }
         }
 
-        let _response = llm.ask(&input);
+        print_separator();
+        let _response = llm.ask(&input, llm_response_callback);
+        println!();
+        print_separator();
     }
 }
 fn main() {
@@ -131,7 +164,7 @@ fn main() {
         match conversation_starter {
             Some(msg) => {
                 let mut llm = CopilotChat::new();
-                let _response = llm.ask(&msg);
+                let _response = llm.ask(&msg, llm_response_callback);
             }
             None => {
                 println!("Please provide a message to ask the model when doing single-time query");

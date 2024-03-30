@@ -9,7 +9,6 @@ use std::io::{self, Write};
 
 use serde_json::{from_slice, Value};
 use std::collections::HashMap;
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::runtime::Runtime;
 pub enum LLMRole {
     User,
@@ -18,7 +17,7 @@ pub enum LLMRole {
 }
 
 pub trait LLM {
-    fn ask(&mut self, question: &str) -> String;
+    fn ask(&mut self, question: &str, callback: fn(&str)) -> String;
     fn append_message(&mut self, role: LLMRole, content: &String);
     //TODO: implement these
     // fn to_json(&self, json_path: &str);
@@ -91,10 +90,10 @@ impl LLM for CopilotChat {
         return code_blocks;
     }
 
-    fn ask(&mut self, question: &str) -> String {
+    fn ask(&mut self, question: &str, callback: fn(&str)) -> String {
         self.append_message(LLMRole::User, &question.to_string());
         let rt = Runtime::new().unwrap();
-        let res = rt.block_on(self.stream_copilot_request(question));
+        let res = rt.block_on(self.stream_copilot_request(question, callback));
 
         match res {
             Ok(ai_output) => {
@@ -113,12 +112,12 @@ impl LLM for CopilotChat {
                         match status.as_u16() {
                             401 => {
                                 if self.update_jwt_token() {
-                                    return self.ask(question); // retry the request
+                                    return self.ask(question, callback); // retry the request
                                 }
                             }
                             400 => { // copilot API refuses to deal with non-coding questions, but
                                 // if we grill it eventually it will give us a response
-                                return self.ask("?");
+                                return self.ask("?", callback);
                             }
                             _ => {}
                         }
@@ -186,7 +185,7 @@ impl CopilotChat {
      *
      * @param question: the question to ask the copilot server
      */
-    async fn stream_copilot_request(&mut self, question: &str) -> Result<Option<String>, Error> {
+    async fn stream_copilot_request(&mut self, question: &str, callback: fn(&str)) -> Result<Option<String>, Error> {
         let client = Client::new();
 
         let headers = self.api_request_header.clone();
@@ -244,7 +243,6 @@ impl CopilotChat {
             return Some(word);
         }
 
-        println!("AI:====================");
         let mut ai_response: String = String::new();
         let mut buf: String = String::new();
         let mut stream = response.bytes_stream();
@@ -270,8 +268,7 @@ impl CopilotChat {
                 for i in 0..iter_range {
                     let partial_ai_response = read_line(lines[i]);
                     if partial_ai_response.is_some() {
-                        print!("{}", &partial_ai_response.clone().unwrap());
-                        io::stdout().flush().unwrap();
+                        callback(&partial_ai_response.as_ref().unwrap());
                         ai_response.push_str(&partial_ai_response.unwrap());
                     }
                 }
@@ -282,8 +279,6 @@ impl CopilotChat {
                 }
             }
         }
-        println!();
-        println!("=======================");
 
         return Ok(Some(ai_response));
     }
