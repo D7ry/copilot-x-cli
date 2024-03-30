@@ -61,12 +61,12 @@ fn print_syntax_highlighted_code(code: &str, language: &str) {
     let ts = ThemeSet::load_defaults();
 
     // Use the Python syntax
-    let syntax = ps.find_syntax_by_extension("py").unwrap();
+    let syntax = ps.find_syntax_by_extension("cpp").unwrap();
     let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
 
     let ranges: Vec<(Style, &str)> = h.highlight(code, &ps);
     let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-    println!("{}", escaped);
+    print!("{}", escaped);
     
     print!("\x1b[0m"); // reset color
 
@@ -141,7 +141,6 @@ fn llm_response_callback(response: &str) {
                                 MAIN_STATE.backticks_count = 0;
                                 // print the ending backticks that we swallowed
                                 println!("```");
-                                print_separator();
                             }
                             // print out formatted line of code
                             print_syntax_highlighted_code(
@@ -262,20 +261,12 @@ fn test_syntax_highlighting() {
    let code = 
 "
 ```python
-def here():
-    print('here')
-    return
+#include <iostream>
 
-class Test:
-    def __init__(self):
-        pass
-
-        
-
-
-
-
-#end here
+int main() {
+    std::cout << \"Hello, World!\" << std::endl;
+    return 0;
+}
 ```
 
 
@@ -290,19 +281,20 @@ not code
 
 
 ```python2
-def main():
-    return
-
-
-
+#include <iostream>\n#include <string>\n\nclass Person {\nprivate:\n    std::string name;\n    int age;\n\npublic:\n    Person(std::string name, int age) : name(name), age(age) {}\n\n    void greet() {\n        std::cout << \"Hello, my name is \\\"\" << name << \"\\\" and I am \" << age << \" years old.\\n\";\n    }\n\n    void haveBirthday() {\n        age++;\n        std::cout << \"It's my birthday! I am now \" << age << \" years old.\\n\";\n    }\n};\n\nint main() {\n    Person john(\"John\", 20);\n    john.greet();\n    john.haveBirthday();\n    john.greet();\n\n    return 0;\n}
 ```
+
+not code
+
+
+the above is beautiful!
     "; 
     llm_response_callback(code);
 }
 
 fn main() {
-    test_syntax_highlighting();
-    return;
+    // test_syntax_highlighting();
+    // return;
     let mut conversation_starter: Option<String> = None;
 
     let matches = App::new("Copilot Chat CLI")
