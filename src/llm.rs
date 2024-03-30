@@ -20,8 +20,10 @@ pub enum LLMRole {
 pub trait LLM {
     fn ask(&mut self, question: &str) -> String;
     fn append_message(&mut self, role: LLMRole, content: &String);
-    fn to_json(&self, json_path: &str);
-    fn from_json(&mut self, json_path: &str);
+    //TODO: implement these
+    // fn to_json(&self, json_path: &str);
+    // fn from_json(&mut self, json_path: &str);
+    fn get_code_blocks(&self) -> HashMap<String, String>;
 }
 
 pub struct CopilotChat {
@@ -50,6 +52,43 @@ impl LLM for CopilotChat {
                 }));
             }
         }
+    }
+
+    fn get_code_blocks(&self) -> HashMap<String, String> { 
+        let mut code_blocks: HashMap<String, String> = HashMap::new();
+        let messages = self.state["messages"].as_array().unwrap();
+        for message in messages {
+            let role = message["role"].as_str().unwrap();
+            if role != "assistant" {
+                continue;
+            }
+            let content = message["content"].as_str().unwrap();
+            if content.contains("```") {
+                let lines = content.split("\n").collect::<Vec<&str>>();
+                let mut code_block: String = String::new();
+                let mut code_block_name: String = String::new();
+                let mut in_code_block = false;
+                for line in lines {
+                    if line.contains("```") {
+                        if in_code_block {
+                            code_blocks.insert(code_block_name.clone(), code_block.clone());
+                            code_block.clear();
+                            code_block_name.clear();
+                            in_code_block = false;
+                        } else {
+                            code_block_name = line.replace("```", "").trim().to_string();
+                            in_code_block = true;
+                        }
+                    } else {
+                        if in_code_block {
+                            code_block.push_str(line);
+                            code_block.push_str("\n");
+                        }
+                    }
+                }
+            }
+        }
+        return code_blocks;
     }
 
     fn ask(&mut self, question: &str) -> String {
@@ -121,6 +160,7 @@ impl CopilotChat {
 
     // update the jwt token in the request header, returns true if the token was updated
     fn update_jwt_token(&mut self) -> bool {
+        println!("Updating jwt token");
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
 
@@ -136,6 +176,7 @@ impl CopilotChat {
             "authorization",
             HeaderValue::from_str(&bearer_token).unwrap(),
         );
+        println!("{:?}",self.api_request_header);
         return true;
     }
 
