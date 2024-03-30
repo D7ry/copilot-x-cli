@@ -21,10 +21,9 @@ use std::thread;
 enum CodeBlockState {
     None,
     EatingBackTicksBegin,
-    EatingBackTicksEnd,
     EatingCode,
 }
-struct MainState {
+struct CodeBlockMeta {
     backticks_count: u8,
     code_line_buf: String,
     code_block_type_buf: String,
@@ -67,13 +66,13 @@ fn print_syntax_highlighted_code(code: &str, language: &str) {
     let ranges: Vec<(Style, &str)> = h.highlight(code, &ps);
     let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
     print!("{}", escaped);
-    
+
     print!("\x1b[0m"); // reset color
 
     io::stdout().flush().unwrap();
 }
 
-static mut MAIN_STATE: MainState = MainState {
+static mut MAIN_STATE: CodeBlockMeta = CodeBlockMeta {
     backticks_count: 0,
     code_line_buf: String::new(), // one line of the code block
     code_block_type_buf: String::new(),
@@ -88,8 +87,8 @@ fn print_separator() {
 
 fn llm_response_callback(response: &str) {
     unsafe {
-        for ch in response.chars() { // iterate over all chars, don't care if strs sent back are
-                                     // incomplete since we are processing at char level anyways
+        for ch in response.chars() {
+            // iterate over all chars, don't care if strs sent back are
             if ch == '\n' {
                 MAIN_STATE.backticks_only_in_curr_line = true;
             }
@@ -97,17 +96,20 @@ fn llm_response_callback(response: &str) {
                 print!("{}", ch);
             }
             // println!("state: {:?}", MAIN_STATE.code_block_state);
-            match MAIN_STATE.code_block_state { // hopefully branch predictor carries performance
+            match MAIN_STATE.code_block_state {
+                // hopefully branch predictor carries performance
                 CodeBlockState::None => {
-                    if ch == '\n' { // hitting a new line, start DFA traversal
+                    if ch == '\n' {
+                        // hitting a new line, start DFA traversal
                         MAIN_STATE.code_block_state = CodeBlockState::EatingBackTicksBegin;
                         MAIN_STATE.code_block_type_buf.clear();
                     }
                 }
                 CodeBlockState::EatingBackTicksBegin => {
-                    if MAIN_STATE.backticks_count == 3 { // take the chars between backticks and
-                                                         // new line as the language of the code block
-                        
+                    if MAIN_STATE.backticks_count == 3 {
+                        // take the chars between backticks and
+                        // new line as the language of the code block
+
                         if ch == '\n' {
                             // println!("begin code block: {}", MAIN_STATE.code_block_type_buf);
                             MAIN_STATE.code_block_state = CodeBlockState::EatingCode;
@@ -115,12 +117,13 @@ fn llm_response_callback(response: &str) {
                         } else {
                             MAIN_STATE.code_block_type_buf.push(ch);
                         }
-                    } else { // still counting backticks
+                    } else {
+                        // still counting backticks
                         match ch {
                             '`' => {
                                 MAIN_STATE.backticks_count += 1;
                             }
-                            '\n'=> {
+                            '\n' => {
                                 MAIN_STATE.backticks_count = 0;
                             }
                             _ => {
@@ -134,7 +137,8 @@ fn llm_response_callback(response: &str) {
                     MAIN_STATE.code_line_buf.push(ch);
                     match ch {
                         '\n' => {
-                            if MAIN_STATE.backticks_count >= 3 { // exit code block
+                            if MAIN_STATE.backticks_count >= 3 {
+                                // exit code block
                                 MAIN_STATE.code_block_state = CodeBlockState::None;
                                 MAIN_STATE.code_block_type_buf.clear();
                                 MAIN_STATE.code_line_buf.clear();
@@ -157,13 +161,7 @@ fn llm_response_callback(response: &str) {
                         _ => {
                             MAIN_STATE.backticks_only_in_curr_line = false;
                         }
-                        
                     }
-                    
-                    
-                }
-                CodeBlockState::EatingBackTicksEnd => { // don't really need this state
-
                 }
             }
             // new line
@@ -255,41 +253,6 @@ fn main_loop(conversation_starter: Option<String>) {
         println!();
         print_separator();
     }
-}
-
-fn test_syntax_highlighting() {
-   let code = 
-"
-```python
-#include <iostream>
-
-int main() {
-    std::cout << \"Hello, World!\" << std::endl;
-    return 0;
-}
-```
-
-
-    not code
-
-    `` not code
-
-    ` not code
-
-not code
-
-
-
-```python2
-#include <iostream>\n#include <string>\n\nclass Person {\nprivate:\n    std::string name;\n    int age;\n\npublic:\n    Person(std::string name, int age) : name(name), age(age) {}\n\n    void greet() {\n        std::cout << \"Hello, my name is \\\"\" << name << \"\\\" and I am \" << age << \" years old.\\n\";\n    }\n\n    void haveBirthday() {\n        age++;\n        std::cout << \"It's my birthday! I am now \" << age << \" years old.\\n\";\n    }\n};\n\nint main() {\n    Person john(\"John\", 20);\n    john.greet();\n    john.haveBirthday();\n    john.greet();\n\n    return 0;\n}
-```
-
-not code
-
-
-the above is beautiful!
-    "; 
-    llm_response_callback(code);
 }
 
 fn main() {
