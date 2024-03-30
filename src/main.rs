@@ -22,6 +22,20 @@ fn main_loop(conversation_starter: Option<String>) {
         if input.is_empty() {
             continue;
         }
+
+        if input.contains("\\\\") { //input has double backlashes, replace them with clipboards content
+            let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+            match ctx.get_contents() {
+                Ok(msg) => {
+                    input = input.replace("\\\\", &msg);
+                },
+                Err(_) => {
+                    println!("Error: Could not get clipboard contents when trying to replace \\\\ with clipboard contents");
+                    return;
+                }
+            }
+        }
+        
         let _response = llm.ask(&input);
     }
 }
