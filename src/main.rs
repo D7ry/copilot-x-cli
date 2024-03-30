@@ -17,6 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use std::thread;
 
+#[derive(PartialEq)]
 enum CodeBlockState {
     None,
     EatingBackTicksBegin,
@@ -93,7 +94,10 @@ fn llm_response_callback(response: &str) {
                                      // incomplete since we are processing at char level anyways
             if ch == '\n' {
                 MAIN_STATE.num_backticks_at_line_begin = 0;
-                MAIN_STATE.backticks_only_in_curr_line = true
+                MAIN_STATE.backticks_only_in_curr_line = true;
+            }
+            if MAIN_STATE.code_block_state != CodeBlockState::EatingCode {
+                print!("{}", ch);
             }
             match MAIN_STATE.code_block_state { // hopefully branch predictor carries performance
                 CodeBlockState::None => {
@@ -105,7 +109,9 @@ fn llm_response_callback(response: &str) {
                 CodeBlockState::EatingBackTicksBegin => {
                     if MAIN_STATE.backticks_count == 3 { // take the chars between backticks and
                                                          // new line as the language of the code block
+                        
                         if ch == '\n' {
+                            print!("begin code block: {}", MAIN_STATE.code_block_type_buf);
                             MAIN_STATE.code_block_state = CodeBlockState::EatingCode;
                             MAIN_STATE.backticks_count = 0;
                         } else {
@@ -115,6 +121,7 @@ fn llm_response_callback(response: &str) {
                         match ch {
                             '`' => {
                                 MAIN_STATE.backticks_count += 1;
+                                print!("backticks: {}", MAIN_STATE.backticks_count);
                             }
                             _ => {
                                 MAIN_STATE.code_block_state = CodeBlockState::None;
@@ -142,7 +149,6 @@ fn llm_response_callback(response: &str) {
                                 MAIN_STATE.code_block_state = CodeBlockState::None;
                                 MAIN_STATE.code_block_type_buf.clear();
                                 MAIN_STATE.code_line_buf.clear();
-                                println!("Exiting code block");
                                 print_separator();
                             }
                         }
@@ -162,7 +168,6 @@ fn llm_response_callback(response: &str) {
         }
     }
     // simply print the response
-    // print!("{}", response);
     io::stdout().flush().unwrap();
 }
 
@@ -269,16 +274,15 @@ class Test:
 
 #end here
 ```
-don't print me
-
- 
- 
- don't print me
 
 
+    not code
 
- don't print me
+    `` not code
 
+    ` not code
+
+not code
 
 
 
