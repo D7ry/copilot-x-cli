@@ -17,6 +17,13 @@ pub enum LLMRole {
 }
 
 pub trait LLM {
+    /**
+     * Ask a question to the AI model
+     *
+     * @param question: the question to ask the AI model
+     * @param callback: a callback function that will be called with partial responses
+     * @return the final response from the AI model
+     */
     fn ask(&mut self, question: &str, callback: fn(&str)) -> String;
     fn append_message(&mut self, role: LLMRole, content: &String);
     //TODO: implement these
