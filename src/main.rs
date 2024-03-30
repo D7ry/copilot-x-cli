@@ -19,7 +19,9 @@ fn main_loop(conversation_starter: Option<String>) {
         input.clear();
         std::io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
-
+        if input.is_empty() {
+            continue;
+        }
         let _response = llm.ask(&input);
     }
 }
