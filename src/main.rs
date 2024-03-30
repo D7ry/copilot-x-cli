@@ -9,10 +9,6 @@ fn main_loop() {
         std::io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
 
-        if input == "q" {
-            break;
-        }
-
         let _response = llm.ask(&input);
     }
 }
@@ -21,6 +17,5 @@ fn main() {
     for arg in env::args() {
         println!("{}", arg)
     }
-
     main_loop();
 }

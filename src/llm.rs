@@ -34,14 +34,19 @@ impl LLM for CopilotChat {
         let res = rt.block_on(self.stream_copilot_request(question));
 
         match res {
-            Ok(response) => {
+            Ok(ai_output) => {
+                if ai_output.is_none() {
+                    return "Empty response".to_string();
+                }
+                let ai_output : String = ai_output.unwrap().to_string();
+                
                 if let Some(messages) = self.state["messages"].as_array_mut() {
                     messages.push(serde_json::json!({
                         "role": "assistant",
-                        "content": response,
+                        "content": ai_output
                     }));
                 }
-                return response;
+                return ai_output;
             }
             Err(e) => {
                 println!("Error: {:?}", e);
@@ -91,7 +96,7 @@ impl CopilotChat {
      *
      * @param question: the question to ask the copilot server
      */
-    async fn stream_copilot_request(&self, question: &str) -> Result<String, Error> {
+    async fn stream_copilot_request(&self, question: &str) -> Result<Option<String>, Error> {
         let client = Client::new();
 
         // println!("state: {:?}", self.state);
@@ -103,6 +108,14 @@ impl CopilotChat {
             .json(&self.state) // Assuming `state` is already defined and serializable
             .send()
             .await?;
+
+        match response.error_for_status_ref() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("Error: {:?}", e);
+                return Err(e);
+            }
+        }
 
         // read a line that was sent back. copilot responses are sent in lines json-like bytes
         fn read_line(line: &str) -> Option<String> {
@@ -181,7 +194,7 @@ impl CopilotChat {
         println!();
         println!("=======================");
 
-        return Ok(ai_response);
+        return Ok(Some(ai_response));
     }
 
     async fn get_jwt_token() -> Option<String> {
