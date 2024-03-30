@@ -18,7 +18,7 @@ clis out there, I'd like to have something straightforward that integrates easil
 This cli tool doesn't create its dedicated GUI -- it simply flushes the copilot's output to stdout,
 which you can yank and inspect with your favorite term emulator. It also provides some handy
 features so that your hands _don't need to leave the keyboard again_, if you use vim(btw).
-
+![alt text](images/workflow.png)
 
 ## Features
 
