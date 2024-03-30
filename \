@@ -1,0 +1,81 @@
+use serde_json::Value;
+use std::env;
+use std::fs;
+use std::path::PathBuf;
+
+use reqwest::header;
+use std::collections::HashMap;
+
+pub trait LLM {
+    fn ask(&self, question: &str) -> String;
+}
+
+pub struct CopilotChat {
+    auth_token: String,
+    jwt_token: Option<String>,
+}
+
+impl LLM for CopilotChat {
+    fn ask(&self, question: &str) -> String {
+        Self::get_jwt_token();
+        return "Hello, world!".to_string();
+    }
+}
+
+impl CopilotChat {
+    fn get_oauth_token() -> String {
+        match std::env::var("COPILOT_TOKEN") {
+            Ok(token) => return token,
+            Err(_) => {}
+        }
+
+        let mut path = PathBuf::from(env::var("HOME").unwrap());
+        path.push(".config/github-copilot/hosts.json");
+
+        let data = fs::read_to_string(path).expect("Unable to read file");
+        let json: Value = serde_json::from_str(&data).expect("JSON was not well-formatted");
+        let oauth_token = json["github.com"]["oauth_token"]
+            .as_str()
+            .expect("oauth_token not found");
+
+        println!("oauth_token: {}", oauth_token);
+        return oauth_token.to_string();
+    }
+
+    async fn get_jwt_token() -> Option<String>{
+        let client = reqwest::Client::new();
+
+        let header_pairs = vec![
+            (header::AUTHORIZATION, format!("token {copilot_token}", copilot_token = Self::get_oauth_token())),
+            (header::HeaderValue::from_static("editor-version"), "vscode/1.79.0-insider".to_string()),
+            (header::HeaderValue::from_static("editor-plugin-version"), "copilot/1.86.112".to_string()),
+            ("user-agent", "GithubCopilot/1.86.112".to_string()),
+            ("accept", "*/*".to_string()),
+        ];
+
+        let mut headers = header::HeaderMap::new();
+
+        let mut params = HashMap::new();
+        params.insert("key", "value");
+
+        let res = client
+            .get("https://api.github.com/copilot_internal/v2/token")
+            .headers(headers)
+            .send().await.unwrap();
+
+        let json: Value = res.text().await.unwrap().parse().unwrap();
+
+
+        println!("{:#?}", json);
+
+        return json["token"].as_str().map(|s| s.to_string());
+        
+    }
+    pub fn new() -> CopilotChat {
+        let auth_token = Self::get_oauth_token();
+        return CopilotChat {
+            auth_token: auth_token,
+            jwt_token: None,
+        };
+    }
+}
