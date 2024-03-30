@@ -20,6 +20,8 @@ pub enum LLMRole {
 pub trait LLM {
     fn ask(&mut self, question: &str) -> String;
     fn append_message(&mut self, role: LLMRole, content: &String);
+    fn to_json(&self, json_path: &str);
+    fn from_json(&mut self, json_path: &str);
 }
 
 pub struct CopilotChat {
@@ -66,6 +68,24 @@ impl LLM for CopilotChat {
             }
             Err(e) => {
                 println!("Error: {:?}", e);
+                match e.status() {
+                    Some(status) => {
+                        println!("Status: {:?}", status);
+                        match status.as_u16() {
+                            401 => {
+                                if self.update_jwt_token() {
+                                    return self.ask(question); // retry the request
+                                }
+                            }
+                            400 => { // copilot API refuses to deal with non-coding questions, but
+                                // if we grill it eventually it will give us a response
+                                return self.ask("?");
+                            }
+                            _ => {}
+                        }
+                    }
+                    None => {}
+                }
                 return "Error".to_string();
             }
         }
@@ -99,6 +119,7 @@ impl CopilotChat {
         }
     }
 
+    // update the jwt token in the request header, returns true if the token was updated
     fn update_jwt_token(&mut self) -> bool {
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
@@ -139,20 +160,6 @@ impl CopilotChat {
         match response.error_for_status_ref() {
             Ok(_) => {}
             Err(e) => {
-                if e.status().is_some() {
-                    if e.status().unwrap().as_u16() == 401 {
-                        if self.update_jwt_token() {
-                            // submit the request again
-                            response = client
-                                .post("https://api.githubcopilot.com/chat/completions")
-                                .headers(self.api_request_header.clone())
-                                .json(&self.state)
-                                .send()
-                                .await?;
-                        }
-                    }
-                }
-                println!("Error: {:?}", e);
                 return Err(e);
             }
         }
