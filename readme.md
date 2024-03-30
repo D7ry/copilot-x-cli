@@ -50,5 +50,5 @@ Jailbreak is enabled by default and currently can't be disabled.
 - [ ] toggleable jail break
 - [ ] customizable system prompt
 - [ ] a better version of copilot cli?
-- [ ] dynamic syntax highlighting
+- [x] dynamic syntax highlighting
 
