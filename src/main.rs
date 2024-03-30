@@ -2,6 +2,8 @@ use std::env;
 use clap::{Arg, App};
 mod llm;
 use llm::{CopilotChat, LLM};
+use clipboard::ClipboardProvider;
+use clipboard::ClipboardContext;
 fn main_loop(conversation_starter: Option<String>) {
     let mut llm = CopilotChat::new();
     let mut input: String = String::new();
@@ -22,7 +24,7 @@ fn main_loop(conversation_starter: Option<String>) {
     }
 }
 fn main() {
-    let conversation_starter : Option<String>;
+    let mut conversation_starter : Option<String> = None;
     for arg in env::args() {
         println!("{}", arg)
     }
@@ -36,9 +38,9 @@ fn main() {
             .short("s")
             .takes_value(false)
             .required(false))
-        .arg(Arg::with_name("j")
-            .short("j")
-            .takes_value(true)
+        .arg(Arg::with_name("use_clipboard")
+            .short("c")
+            .takes_value(false)
             .required(false))
         .arg(Arg::with_name("k")
             .short("k")
@@ -46,32 +48,46 @@ fn main() {
             .required(false))
         .get_matches();
 
-
-    match matches.value_of("message") {
-        Some(msg) => {
-            conversation_starter = Some(msg.to_string());
-        },
-        None => {
-            conversation_starter = None;
-        }
-    }
-
-
-    if matches.is_present("single_query") {
-        let query : String;
-        match matches.value_of("message") {
-            Some(msg) => {
-                query = msg.to_string();
+    if matches.is_present("use_clipboard") {
+        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
+        match ctx.get_contents() {
+            Ok(msg) => {
+                conversation_starter = Some(msg);
             },
-            None => {
-                println!("Please provide a query to ask");
+            Err(_) => {
+                println!("Error: Could not get clipboard contents");
                 return;
             }
         }
-        
-        let mut llm = CopilotChat::new();
-        let _response = llm.ask(&query);
-        return;
+    }
+
+    match matches.value_of("message") {
+        Some(msg) => {
+            match &conversation_starter {
+                Some(_) => {
+                    conversation_starter.as_mut().unwrap().push_str(msg);
+                },
+                None => {
+                    conversation_starter = Some(msg.to_string());
+                }
+            }
+        },
+        None => {
+            // no thing, is pasted from clipboard the starter should be non-null
+        }
+    }
+
+    if matches.is_present("single_query") {
+        match conversation_starter {
+            Some(msg) => {
+                let mut llm = CopilotChat::new();
+                let _response = llm.ask(&msg);
+            },
+            None => {
+                println!("Please provide a message to ask the model when doing single-time query");
+                return;
+            }
+        }
     } else {
         main_loop(conversation_starter);
     }
