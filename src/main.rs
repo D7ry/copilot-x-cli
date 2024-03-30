@@ -64,14 +64,13 @@ fn print_syntax_highlighted_code(code: &str, language: &str) {
     let syntax = ps.find_syntax_by_extension("py").unwrap();
     let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
 
-    // Highlight and print each line
-    for line in code.lines() {
-        let ranges: Vec<(Style, &str)> = h.highlight(line, &ps);
-        let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
-        println!("{}", escaped);
-        // println!("{}{}", cursor::Goto(1, 1), escaped);
-    }
+    let ranges: Vec<(Style, &str)> = h.highlight(code, &ps);
+    let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+    println!("{}", escaped);
+    
     print!("\x1b[0m"); // reset color
+
+    io::stdout().flush().unwrap();
 }
 
 static mut MAIN_STATE: MainState = MainState {
@@ -142,7 +141,9 @@ fn llm_response_callback(response: &str) {
                             if MAIN_STATE.num_backticks_at_line_begin == 3 { // exit code block
                                 MAIN_STATE.code_block_state = CodeBlockState::None;
                                 MAIN_STATE.code_block_type_buf.clear();
-                                // println!("Exiting code block");
+                                MAIN_STATE.code_line_buf.clear();
+                                println!("Exiting code block");
+                                print_separator();
                             }
                         }
                         _ => {
@@ -257,13 +258,16 @@ def here():
     print('here')
     return
 
-  
+class Test:
+    def __init__(self):
+        pass
 
-`
+        
 
 
 
-end here
+
+#end here
 ```
 don't print me
 
@@ -274,8 +278,11 @@ don't print me
 
 
  don't print me
-```python2
 
+
+
+
+```python2
 def main():
     return
 
