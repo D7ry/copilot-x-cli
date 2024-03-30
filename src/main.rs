@@ -7,13 +7,161 @@ use llm::{CopilotChat, LLM};
 
 use std::io::{self, Write};
 
-fn llm_response_callback(response: &str) {
-    print!("{}", response);
-    io::stdout().flush().unwrap();
+use syntect::easy::HighlightLines;
+use syntect::highlighting::{Style, ThemeSet};
+use syntect::parsing::SyntaxSet;
+use syntect::util::as_24_bit_terminal_escaped;
+use termion::{color, cursor};
+
+use std::sync::{Arc, Mutex};
+
+use std::thread;
+
+enum CodeBlockState {
+    None,
+    EatingBackTicksBegin,
+    EatingBackTicksEnd,
+    EatingCode,
 }
+struct MainState {
+    backticks_count: u8,
+    code_line_buf: String,
+    code_block_type_buf: String,
+    code_block_state: CodeBlockState,
+    num_backticks_at_line_begin: u8,
+    backticks_only_in_curr_line: bool,
+}
+
+fn lock_test() {
+    let lock = Arc::new(Mutex::new(()));
+
+    let lock_clone = Arc::clone(&lock);
+    let handle1 = thread::spawn(move || {
+        let _guard = lock_clone.lock().unwrap();
+        // Critical section starts
+        println!("Thread 1 is running");
+        // Critical section ends
+    });
+
+    let lock_clone = Arc::clone(&lock);
+    let handle2 = thread::spawn(move || {
+        let _guard = lock_clone.lock().unwrap();
+        // Critical section starts
+        println!("Thread 2 is running");
+        // Critical section ends
+    });
+
+    handle1.join().unwrap();
+    handle2.join().unwrap();
+}
+
+fn print_syntax_highlighted_code(code: &str, language: &str) {
+    // Load the syntaxes and themes
+    let ps = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+
+    // Use the Python syntax
+    let syntax = ps.find_syntax_by_extension("py").unwrap();
+    let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
+
+    // Highlight and print each line
+    for line in code.lines() {
+        let ranges: Vec<(Style, &str)> = h.highlight(line, &ps);
+        let escaped = as_24_bit_terminal_escaped(&ranges[..], true);
+        println!("{}", escaped);
+        // println!("{}{}", cursor::Goto(1, 1), escaped);
+    }
+    print!("\x1b[0m"); // reset color
+}
+
+static mut MAIN_STATE: MainState = MainState {
+    backticks_count: 0,
+    code_line_buf: String::new(), // one line of the code block
+    code_block_type_buf: String::new(),
+    code_block_state: CodeBlockState::None,
+    num_backticks_at_line_begin: 0,
+    backticks_only_in_curr_line: true,
+};
 
 fn print_separator() {
     println!("----------------------------------------");
+    io::stdout().flush().unwrap();
+}
+
+fn llm_response_callback(response: &str) {
+    unsafe {
+        for ch in response.chars() { // iterate over all chars, don't care if strs sent back are
+                                     // incomplete since we are processing at char level anyways
+            if ch == '\n' {
+                MAIN_STATE.num_backticks_at_line_begin = 0;
+                MAIN_STATE.backticks_only_in_curr_line = true
+            }
+            match MAIN_STATE.code_block_state { // hopefully branch predictor carries performance
+                CodeBlockState::None => {
+                    if ch == '\n' { // hitting a new line, start DFA traversal
+                        MAIN_STATE.code_block_state = CodeBlockState::EatingBackTicksBegin;
+                        MAIN_STATE.code_block_type_buf.clear();
+                    }
+                }
+                CodeBlockState::EatingBackTicksBegin => {
+                    if MAIN_STATE.backticks_count == 3 { // take the chars between backticks and
+                                                         // new line as the language of the code block
+                        if ch == '\n' {
+                            MAIN_STATE.code_block_state = CodeBlockState::EatingCode;
+                            MAIN_STATE.backticks_count = 0;
+                        } else {
+                            MAIN_STATE.code_block_type_buf.push(ch);
+                        }
+                    } else { // still counting backticks
+                        match ch {
+                            '`' => {
+                                MAIN_STATE.backticks_count += 1;
+                            }
+                            _ => {
+                                MAIN_STATE.code_block_state = CodeBlockState::None;
+                            }
+                        }
+                    }
+                }
+                CodeBlockState::EatingCode => {
+                    MAIN_STATE.code_line_buf.push(ch);
+                    match ch {
+                        '\n' => {
+                            // print out formatted line of code
+                            print_syntax_highlighted_code(
+                                &MAIN_STATE.code_line_buf,
+                                &MAIN_STATE.code_block_type_buf,
+                            );
+                            MAIN_STATE.code_line_buf.clear();
+                        }
+                        '`' => {
+                            if MAIN_STATE.backticks_only_in_curr_line {
+                                MAIN_STATE.num_backticks_at_line_begin += 1;
+                                // println!("backticks: {}", MAIN_STATE.num_backticks_at_line_begin);
+                            }
+                            if MAIN_STATE.num_backticks_at_line_begin == 3 { // exit code block
+                                MAIN_STATE.code_block_state = CodeBlockState::None;
+                                MAIN_STATE.code_block_type_buf.clear();
+                                // println!("Exiting code block");
+                            }
+                        }
+                        _ => {
+                            MAIN_STATE.backticks_only_in_curr_line = false;
+                        }
+                        
+                    }
+                    
+                    
+                }
+                CodeBlockState::EatingBackTicksEnd => { // don't really need this state
+
+                }
+            }
+            // new line
+        }
+    }
+    // simply print the response
+    // print!("{}", response);
     io::stdout().flush().unwrap();
 }
 
@@ -100,11 +248,48 @@ fn main_loop(conversation_starter: Option<String>) {
         print_separator();
     }
 }
+
+fn test_syntax_highlighting() {
+   let code = 
+"
+```python
+def here():
+    print('here')
+    return
+
+  
+
+`
+
+
+
+end here
+```
+don't print me
+
+ 
+ 
+ don't print me
+
+
+
+ don't print me
+```python2
+
+def main():
+    return
+
+
+
+```
+    "; 
+    llm_response_callback(code);
+}
+
 fn main() {
+    test_syntax_highlighting();
+    return;
     let mut conversation_starter: Option<String> = None;
-    for arg in env::args() {
-        println!("{}", arg)
-    }
 
     let matches = App::new("Copilot Chat CLI")
         .arg(
