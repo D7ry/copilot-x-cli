@@ -13,11 +13,7 @@ fn main_loop() {
             break;
         }
 
-
-        println!("you inputted: {}", input);
-        let response = llm.ask(&input);
-        println!("response: {}", response);
-        
+        let _response = llm.ask(&input);
     }
 }
 fn main() {
@@ -25,8 +21,6 @@ fn main() {
     for arg in env::args() {
         println!("{}", arg)
     }
-    
-    println!("Hello, world!");
 
     main_loop();
 }

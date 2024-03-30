@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use futures_util::stream::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, Error};
+use std::io::{self, Write};
 
 use serde_json::{from_slice, Value};
 use std::collections::HashMap;
@@ -23,8 +24,6 @@ pub struct CopilotChat {
 
 impl LLM for CopilotChat {
     fn ask(&mut self, question: &str) -> String {
-        println!("Asking: {}", question);
-
         if let Some(messages) = self.state["messages"].as_array_mut() {
             messages.push(serde_json::json!({
                 "role": "user",
@@ -32,9 +31,23 @@ impl LLM for CopilotChat {
             }));
         }
         let rt = Runtime::new().unwrap();
-        let res = rt.block_on(self.stream_copilot_request(question)).unwrap();
+        let res = rt.block_on(self.stream_copilot_request(question));
 
-        return "success".to_string();
+        match res {
+            Ok(response) => {
+                if let Some(messages) = self.state["messages"].as_array_mut() {
+                    messages.push(serde_json::json!({
+                        "role": "assistant",
+                        "content": response,
+                    }));
+                }
+                return response;
+            }
+            Err(e) => {
+                println!("Error: {:?}", e);
+                return "Error".to_string();
+            }
+        }
     }
 }
 
@@ -72,33 +85,76 @@ impl CopilotChat {
         );
     }
 
-    async fn stream_copilot_request(&self, question: &str) -> Result<(), Error> {
+    /**
+     * Stream a request to the copilot server, prints out the response in a text stream
+     * returns the completed response as a string
+     *
+     * @param question: the question to ask the copilot server
+     */
+    async fn stream_copilot_request(&self, question: &str) -> Result<String, Error> {
         let client = Client::new();
 
-        println!("state: {:?}", self.state);
+        // println!("state: {:?}", self.state);
         let headers = self.request_header.clone();
-        println!("headers: {:?}", headers);
-        let mut response = client
+        // println!("headers: {:?}", headers);
+        let response = client
             .post("https://api.githubcopilot.com/chat/completions")
             .headers(headers)
             .json(&self.state) // Assuming `state` is already defined and serializable
             .send()
             .await?;
 
-        println!("response: {:?}", response);
+        // read a line that was sent back. copilot responses are sent in lines json-like bytes
+        fn read_line(line: &str) -> Option<String> {
+            // println!("line: {:?}", line);
+            if !line.contains("data") {
+                return None;
+            }
+            if line.contains("data: [DONE]") {
+                return None;
+            }
+            let to_parse = &line[6..];
+            let json_res: Value = serde_json::from_str(to_parse).unwrap();
+            if json_res.get("choices").is_none() {
+                return None;
+            }
+            let choices = json_res.get("choices").unwrap();
+            if !choices.is_array() {
+                return None;
+            }
+            let choices = choices.as_array().unwrap();
+            if choices.len() == 0 {
+                return None;
+            }
+            if choices[0].get("delta").is_none() {
+                return None;
+            }
+            if choices[0]["delta"].get("content").is_none() {
+                return None;
+            }
+            let word = choices[0]["delta"]["content"].as_str();
+            if word.is_none() {
+                return None;
+            }
+            let word = word.unwrap().to_string();
+            print!("{}", word);
+            io::stdout().flush().unwrap();
 
-        println!("reponse:");
+            return Some(word);
+        }
 
+        println!("AI:====================");
+        let mut ai_response: String = String::new();
         let mut buf: String = String::new();
         let mut stream = response.bytes_stream();
         while let Some(item) = stream.next().await {
             let chunk = item?;
             // look for new line character, if found, print the buffer
             let chunk_str = std::str::from_utf8(&chunk).unwrap();
-            println!("chunk");
+            // println!("chunk");
             buf.push_str(chunk_str);
             if chunk_str.contains("\n") {
-                println!("chunk has newline");
+                // println!("chunk has newline");
                 // look for all the new lines
                 let lines = buf.split("\n").collect::<Vec<&str>>();
                 let mut iter_range: usize = 0;
@@ -110,7 +166,10 @@ impl CopilotChat {
                     iter_range = lines.len() - 1;
                 }
                 for i in 0..iter_range {
-                    println!("line: {:?}", lines[i]);
+                    let partial_ai_response = read_line(lines[i]);
+                    if partial_ai_response.is_some() {
+                        ai_response.push_str(&partial_ai_response.unwrap());
+                    }
                 }
                 // set buf to last line, if the last line doesn't have a newline
                 let last_line = lines.last().unwrap();
@@ -119,9 +178,10 @@ impl CopilotChat {
                 }
             }
         }
-        println!("buf: {:?}", buf);
+        println!();
+        println!("=======================");
 
-        return Ok(());
+        return Ok(ai_response);
     }
 
     async fn get_jwt_token() -> Option<String> {
