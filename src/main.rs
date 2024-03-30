@@ -1,34 +1,16 @@
 use clap::{App, Arg};
+mod codeblock_builder;
 mod llm;
 mod syntax;
 use clipboard::ClipboardContext;
 use clipboard::ClipboardProvider;
+use codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
 use llm::{CopilotChat, LLM};
 
 use std::io::{self, Write};
 
-#[derive(PartialEq, Debug)]
-enum CodeBlockState {
-    None,
-    EatingBackTicksBegin,
-    EatingCode,
-}
-struct CodeBlockMeta {
-    backticks_count: u8,
-    code_line_buf: String,
-    code_block_type_buf: String,
-    code_block_state: CodeBlockState,
-    backticks_only_in_curr_line: bool,
-}
 
-
-static mut MAIN_STATE: CodeBlockMeta = CodeBlockMeta {
-    backticks_count: 0,
-    code_line_buf: String::new(), // one line of the code block
-    code_block_type_buf: String::new(),
-    code_block_state: CodeBlockState::None,
-    backticks_only_in_curr_line: true,
-};
+static mut CODEBLOCK_BUILDER: CodeBlockBuilder = CodeBlockBuilder::new();
 
 fn print_separator() {
     println!("----------------------------------------");
@@ -36,89 +18,41 @@ fn print_separator() {
 }
 
 fn llm_response_callback(response: &str) {
-    unsafe {
-        for ch in response.chars() {
-            // iterate over all chars, don't care if strs sent back are
-            if ch == '\n' {
-                MAIN_STATE.backticks_only_in_curr_line = true;
-            }
-            if MAIN_STATE.code_block_state != CodeBlockState::EatingCode {
-                print!("{}", ch);
-            }
-            // println!("state: {:?}", MAIN_STATE.code_block_state);
-            match MAIN_STATE.code_block_state {
-                // hopefully branch predictor carries performance
-                CodeBlockState::None => {
-                    if ch == '\n' {
-                        // hitting a new line, start DFA traversal
-                        MAIN_STATE.code_block_state = CodeBlockState::EatingBackTicksBegin;
-                        MAIN_STATE.code_block_type_buf.clear();
-                    }
+    for ch in response.chars() {
+        let print_char: bool;
+        unsafe {
+            let res = CODEBLOCK_BUILDER.build_codeblock_from_char(ch);
+            match res.0 {
+                CodeBlockBuilderState::EatingCode => {
+                    print_char = false;
                 }
-                CodeBlockState::EatingBackTicksBegin => {
-                    if MAIN_STATE.backticks_count == 3 {
-                        // take the chars between backticks and
-                        // new line as the language of the code block
-
-                        if ch == '\n' {
-                            // println!("begin code block: {}", MAIN_STATE.code_block_type_buf);
-                            MAIN_STATE.code_block_state = CodeBlockState::EatingCode;
-                            MAIN_STATE.backticks_count = 0;
-                        } else {
-                            MAIN_STATE.code_block_type_buf.push(ch);
-                        }
-                    } else {
-                        // still counting backticks
-                        match ch {
-                            '`' => {
-                                MAIN_STATE.backticks_count += 1;
-                            }
-                            '\n' => {
-                                MAIN_STATE.backticks_count = 0;
-                            }
-                            _ => {
-                                MAIN_STATE.code_block_state = CodeBlockState::None;
-                                MAIN_STATE.backticks_count = 0;
-                            }
-                        }
-                    }
-                }
-                CodeBlockState::EatingCode => {
-                    MAIN_STATE.code_line_buf.push(ch);
-                    match ch {
-                        '\n' => {
-                            if MAIN_STATE.backticks_count >= 3 {
-                                // exit code block
-                                MAIN_STATE.code_block_state = CodeBlockState::None;
-                                MAIN_STATE.code_block_type_buf.clear();
-                                MAIN_STATE.code_line_buf.clear();
-                                MAIN_STATE.backticks_count = 0;
-                                // print the ending backticks that we swallowed
-                                println!("```");
-                            }
-                            // print out formatted line of code
-                            syntax::print_syntax_highlighted_code_line(
-                                &MAIN_STATE.code_line_buf,
-                                &MAIN_STATE.code_block_type_buf,
-                            );
-                            MAIN_STATE.code_line_buf.clear();
-                        }
-                        '`' => {
-                            if MAIN_STATE.backticks_only_in_curr_line {
-                                MAIN_STATE.backticks_count += 1;
-                            }
-                        }
-                        _ => {
-                            MAIN_STATE.backticks_only_in_curr_line = false;
-                        }
-                    }
+                _ => {
+                    print_char = true;
                 }
             }
-            // new line
+            match res.1 {
+                Some(code_block) => {
+                    //TODO: create app object to manage states
+                }
+                None => {}
+            }
+            match res.2 {
+                Some(code_line_and_language) => {
+                    syntax::print_syntax_highlighted_code_line(
+                        code_line_and_language.0.as_str(),
+                        code_line_and_language.1.as_str(),
+                    );
+                }
+                None => {}
+            }
+        }
+        if print_char {
+            print!("{}", ch);
         }
     }
-    // simply print the response
+
     io::stdout().flush().unwrap();
+    // simply print the response
 }
 
 fn main_loop(conversation_starter: Option<String>) {
@@ -127,6 +61,9 @@ fn main_loop(conversation_starter: Option<String>) {
 
     match conversation_starter {
         Some(msg) => {
+            unsafe {
+                CODEBLOCK_BUILDER.reset();
+            }
             let _response = llm.ask(&msg, llm_response_callback);
             print_separator();
         }
@@ -200,6 +137,9 @@ fn main_loop(conversation_starter: Option<String>) {
         }
 
         print_separator();
+        unsafe {
+            CODEBLOCK_BUILDER.reset();
+        }
         let _response = llm.ask(&input, llm_response_callback);
         println!();
         print_separator();

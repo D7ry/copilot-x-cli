@@ -29,7 +29,7 @@ pub trait LLM {
     //TODO: implement these
     // fn to_json(&self, json_path: &str);
     // fn from_json(&mut self, json_path: &str);
-    fn get_code_blocks(&self) -> HashMap<String, String>;
+    fn get_code_blocks(&self) -> HashMap<String, String>; //TODO: this shouldn't be a part of LLM
 }
 
 pub struct CopilotChat {
