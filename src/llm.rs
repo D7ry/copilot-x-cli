@@ -2,15 +2,14 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
+use futures_util::stream::StreamExt;
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, Error};
-use futures_util::stream::StreamExt;
 
-use serde_json::{Value, from_slice};
+use serde_json::{from_slice, Value};
 use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::runtime::Runtime;
-
 
 pub trait LLM {
     fn ask(&mut self, question: &str) -> String;
@@ -25,7 +24,7 @@ pub struct CopilotChat {
 impl LLM for CopilotChat {
     fn ask(&mut self, question: &str) -> String {
         println!("Asking: {}", question);
-        
+
         if let Some(messages) = self.state["messages"].as_array_mut() {
             messages.push(serde_json::json!({
                 "role": "user",
@@ -33,8 +32,9 @@ impl LLM for CopilotChat {
             }));
         }
         let rt = Runtime::new().unwrap();
-        let jwt = rt.block_on(self.stream_copilot_request(question)).unwrap();
-        return "fuck you!".to_string();
+        let res = rt.block_on(self.stream_copilot_request(question)).unwrap();
+
+        return "success".to_string();
     }
 }
 
@@ -61,12 +61,9 @@ impl CopilotChat {
     fn update_jwt_token(&mut self) {
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
-        
+
         // Update the request header with the new jwt token
-        let bearer_token: String = format!(
-            "Bearer {jwt_token}",
-            jwt_token = jwt.to_string()
-        );
+        let bearer_token: String = format!("Bearer {jwt_token}", jwt_token = jwt.to_string());
 
         println!("bearer_token: {}", bearer_token);
         self.request_header.insert(
@@ -92,11 +89,37 @@ impl CopilotChat {
 
         println!("reponse:");
 
+        let mut buf: String = String::new();
         let mut stream = response.bytes_stream();
         while let Some(item) = stream.next().await {
             let chunk = item?;
-            println!("{:?}", chunk);
+            // look for new line character, if found, print the buffer
+            let chunk_str = std::str::from_utf8(&chunk).unwrap();
+            println!("chunk");
+            buf.push_str(chunk_str);
+            if chunk_str.contains("\n") {
+                println!("chunk has newline");
+                // look for all the new lines
+                let lines = buf.split("\n").collect::<Vec<&str>>();
+                let mut iter_range: usize = 0;
+
+                let last_line_is_copmlete = lines.last().unwrap().contains("\n");
+                if last_line_is_copmlete {
+                    iter_range = lines.len();
+                } else {
+                    iter_range = lines.len() - 1;
+                }
+                for i in 0..iter_range {
+                    println!("line: {:?}", lines[i]);
+                }
+                // set buf to last line, if the last line doesn't have a newline
+                let last_line = lines.last().unwrap();
+                if !last_line_is_copmlete {
+                    buf = last_line.to_string(); // buf is an unfinished line
+                }
+            }
         }
+        println!("buf: {:?}", buf);
 
         return Ok(());
     }
