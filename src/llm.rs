@@ -12,24 +12,48 @@ use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::runtime::Runtime;
 
+pub enum LLMRole {
+    User,
+    Assistant,
+    System,
+}
+
 pub trait LLM {
     fn ask(&mut self, question: &str) -> String;
+    fn append_message(&mut self, role: LLMRole, content: &String);
 }
 
 pub struct CopilotChat {
     jwt_token: Option<String>, //TODO: probably don't need this anymore
     request_header: HeaderMap,
-    state: Value,
+    state: Value, // a json value, conains all past conversation
 }
 
 impl LLM for CopilotChat {
-    fn ask(&mut self, question: &str) -> String {
-        if let Some(messages) = self.state["messages"].as_array_mut() {
-            messages.push(serde_json::json!({
-                "role": "user",
-                "content": question,
-            }));
+    fn append_message(&mut self, role: LLMRole, content: &String) {
+        let role_str = match role {
+            LLMRole::User => "user",
+            LLMRole::Assistant => "assistant",
+            LLMRole::System => "system",
+        };
+        match self.state["messages"].as_array_mut() {
+            None => {
+                self.state["messages"] = serde_json::json!([{
+                    "role": role_str,
+                    "content": content,
+                }]);
+            }
+            Some(messages) => {
+                messages.push(serde_json::json!({
+                    "role": role_str,
+                    "content": content,
+                }));
+            }
         }
+    }
+
+    fn ask(&mut self, question: &str) -> String {
+        self.append_message(LLMRole::User, &question.to_string());
         let rt = Runtime::new().unwrap();
         let res = rt.block_on(self.stream_copilot_request(question));
 
@@ -39,13 +63,7 @@ impl LLM for CopilotChat {
                     return "Empty response".to_string();
                 }
                 let ai_output : String = ai_output.unwrap().to_string();
-                
-                if let Some(messages) = self.state["messages"].as_array_mut() {
-                    messages.push(serde_json::json!({
-                        "role": "assistant",
-                        "content": ai_output
-                    }));
-                }
+                self.append_message(LLMRole::Assistant, &ai_output);
                 return ai_output;
             }
             Err(e) => {
