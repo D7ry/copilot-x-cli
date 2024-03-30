@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 
 use std::thread;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum CodeBlockState {
     None,
     EatingBackTicksBegin,
@@ -29,7 +29,6 @@ struct MainState {
     code_line_buf: String,
     code_block_type_buf: String,
     code_block_state: CodeBlockState,
-    num_backticks_at_line_begin: u8,
     backticks_only_in_curr_line: bool,
 }
 
@@ -79,7 +78,6 @@ static mut MAIN_STATE: MainState = MainState {
     code_line_buf: String::new(), // one line of the code block
     code_block_type_buf: String::new(),
     code_block_state: CodeBlockState::None,
-    num_backticks_at_line_begin: 0,
     backticks_only_in_curr_line: true,
 };
 
@@ -93,12 +91,12 @@ fn llm_response_callback(response: &str) {
         for ch in response.chars() { // iterate over all chars, don't care if strs sent back are
                                      // incomplete since we are processing at char level anyways
             if ch == '\n' {
-                MAIN_STATE.num_backticks_at_line_begin = 0;
                 MAIN_STATE.backticks_only_in_curr_line = true;
             }
             if MAIN_STATE.code_block_state != CodeBlockState::EatingCode {
                 print!("{}", ch);
             }
+            // println!("state: {:?}", MAIN_STATE.code_block_state);
             match MAIN_STATE.code_block_state { // hopefully branch predictor carries performance
                 CodeBlockState::None => {
                     if ch == '\n' { // hitting a new line, start DFA traversal
@@ -111,7 +109,7 @@ fn llm_response_callback(response: &str) {
                                                          // new line as the language of the code block
                         
                         if ch == '\n' {
-                            print!("begin code block: {}", MAIN_STATE.code_block_type_buf);
+                            // println!("begin code block: {}", MAIN_STATE.code_block_type_buf);
                             MAIN_STATE.code_block_state = CodeBlockState::EatingCode;
                             MAIN_STATE.backticks_count = 0;
                         } else {
@@ -121,10 +119,13 @@ fn llm_response_callback(response: &str) {
                         match ch {
                             '`' => {
                                 MAIN_STATE.backticks_count += 1;
-                                print!("backticks: {}", MAIN_STATE.backticks_count);
+                            }
+                            '\n'=> {
+                                MAIN_STATE.backticks_count = 0;
                             }
                             _ => {
                                 MAIN_STATE.code_block_state = CodeBlockState::None;
+                                MAIN_STATE.backticks_count = 0;
                             }
                         }
                     }
@@ -133,6 +134,15 @@ fn llm_response_callback(response: &str) {
                     MAIN_STATE.code_line_buf.push(ch);
                     match ch {
                         '\n' => {
+                            if MAIN_STATE.backticks_count >= 3 { // exit code block
+                                MAIN_STATE.code_block_state = CodeBlockState::None;
+                                MAIN_STATE.code_block_type_buf.clear();
+                                MAIN_STATE.code_line_buf.clear();
+                                MAIN_STATE.backticks_count = 0;
+                                // print the ending backticks that we swallowed
+                                println!("```");
+                                print_separator();
+                            }
                             // print out formatted line of code
                             print_syntax_highlighted_code(
                                 &MAIN_STATE.code_line_buf,
@@ -142,14 +152,7 @@ fn llm_response_callback(response: &str) {
                         }
                         '`' => {
                             if MAIN_STATE.backticks_only_in_curr_line {
-                                MAIN_STATE.num_backticks_at_line_begin += 1;
-                                // println!("backticks: {}", MAIN_STATE.num_backticks_at_line_begin);
-                            }
-                            if MAIN_STATE.num_backticks_at_line_begin == 3 { // exit code block
-                                MAIN_STATE.code_block_state = CodeBlockState::None;
-                                MAIN_STATE.code_block_type_buf.clear();
-                                MAIN_STATE.code_line_buf.clear();
-                                print_separator();
+                                MAIN_STATE.backticks_count += 1;
                             }
                         }
                         _ => {
