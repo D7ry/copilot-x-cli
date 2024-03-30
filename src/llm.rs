@@ -1,26 +1,40 @@
-use serde_json::Value;
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 
 use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::{Client, Error};
+use futures_util::stream::StreamExt;
+
+use serde_json::{Value, from_slice};
 use std::collections::HashMap;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::runtime::Runtime;
 
+
 pub trait LLM {
-    fn ask(&self, question: &str) -> String;
+    fn ask(&mut self, question: &str) -> String;
 }
 
-
 pub struct CopilotChat {
-    jwt_token: Option<String>,
+    jwt_token: Option<String>, //TODO: probably don't need this anymore
     request_header: HeaderMap,
+    state: Value,
 }
 
 impl LLM for CopilotChat {
-    fn ask(&self, question: &str) -> String {
+    fn ask(&mut self, question: &str) -> String {
         println!("Asking: {}", question);
-        return "Hello, world!".to_string();
+        
+        if let Some(messages) = self.state["messages"].as_array_mut() {
+            messages.push(serde_json::json!({
+                "role": "user",
+                "content": question,
+            }));
+        }
+        let rt = Runtime::new().unwrap();
+        let jwt = rt.block_on(self.stream_copilot_request(question)).unwrap();
+        return "fuck you!".to_string();
     }
 }
 
@@ -47,15 +61,44 @@ impl CopilotChat {
     fn update_jwt_token(&mut self) {
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
-        self.jwt_token = Some(jwt);
-
+        
         // Update the request header with the new jwt token
-        let bearer_token : String = format!("Bearer {jwt_token}", jwt_token = self.jwt_token.as_ref().unwrap());
-        self.request_header.insert("authorization", HeaderValue::from_str(&bearer_token).unwrap());
-        println!("jwt_token: {}", self.jwt_token.as_ref().unwrap());
+        let bearer_token: String = format!(
+            "Bearer {jwt_token}",
+            jwt_token = jwt.to_string()
+        );
+
+        println!("bearer_token: {}", bearer_token);
+        self.request_header.insert(
+            "authorization",
+            HeaderValue::from_str(&bearer_token).unwrap(),
+        );
     }
 
-    fn stream_copilot_request(&self, question: &str) -> () {
+    async fn stream_copilot_request(&self, question: &str) -> Result<(), Error> {
+        let client = Client::new();
+
+        println!("state: {:?}", self.state);
+        let headers = self.request_header.clone();
+        println!("headers: {:?}", headers);
+        let mut response = client
+            .post("https://api.githubcopilot.com/chat/completions")
+            .headers(headers)
+            .json(&self.state) // Assuming `state` is already defined and serializable
+            .send()
+            .await?;
+
+        println!("response: {:?}", response);
+
+        println!("reponse:");
+
+        let mut stream = response.bytes_stream();
+        while let Some(item) = stream.next().await {
+            let chunk = item?;
+            println!("{:?}", chunk);
+        }
+
+        return Ok(());
     }
 
     async fn get_jwt_token() -> Option<String> {
@@ -104,7 +147,7 @@ impl CopilotChat {
             return None;
         }
 
-        let token = json["token"].to_string();
+        let token = json["token"].as_str().unwrap().to_string();
 
         return Some(token);
     }
@@ -150,6 +193,16 @@ impl CopilotChat {
         let mut ret = CopilotChat {
             jwt_token: None,
             request_header: map,
+            state: serde_json::json!({
+                "intent": true,
+                "messages": [],
+                "model": "gpt-4",
+                // # "model": "copilot-chat",
+                "n": 1,
+                "stream": true,
+                "temperature": 0.1,
+                "top_p": 1,
+            }),
         };
 
         ret.update_jwt_token();

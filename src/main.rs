@@ -2,7 +2,7 @@ use std::env;
 mod llm;
 use llm::{CopilotChat, LLM};
 fn main_loop() {
-    let llm = CopilotChat::new();
+    let mut llm = CopilotChat::new();
     let mut input: String = String::new();
     loop {
         input.clear();
