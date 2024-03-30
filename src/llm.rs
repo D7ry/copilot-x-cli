@@ -11,7 +11,6 @@ use serde_json::{from_slice, Value};
 use std::collections::HashMap;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::runtime::Runtime;
-
 pub enum LLMRole {
     User,
     Assistant,
@@ -100,13 +99,13 @@ impl CopilotChat {
         }
     }
 
-    fn update_jwt_token(&mut self) {
+    fn update_jwt_token(&mut self) -> bool {
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
 
         if jwt == "" {
             println!("Error: Could not get jwt token");
-            return;
+            return false;
         }
 
         // Update the request header with the new jwt token
@@ -116,6 +115,7 @@ impl CopilotChat {
             "authorization",
             HeaderValue::from_str(&bearer_token).unwrap(),
         );
+        return true;
     }
 
     /**
@@ -124,22 +124,34 @@ impl CopilotChat {
      *
      * @param question: the question to ask the copilot server
      */
-    async fn stream_copilot_request(&self, question: &str) -> Result<Option<String>, Error> {
+    async fn stream_copilot_request(&mut self, question: &str) -> Result<Option<String>, Error> {
         let client = Client::new();
 
-        // println!("state: {:?}", self.state);
         let headers = self.api_request_header.clone();
-        // println!("headers: {:?}", headers);
-        let response = client
+
+        let mut response = client
             .post("https://api.githubcopilot.com/chat/completions")
             .headers(headers)
-            .json(&self.state) // Assuming `state` is already defined and serializable
+            .json(&self.state)
             .send()
             .await?;
 
         match response.error_for_status_ref() {
             Ok(_) => {}
             Err(e) => {
+                if e.status().is_some() {
+                    if e.status().unwrap().as_u16() == 401 {
+                        if self.update_jwt_token() {
+                            // submit the request again
+                            response = client
+                                .post("https://api.githubcopilot.com/chat/completions")
+                                .headers(self.api_request_header.clone())
+                                .json(&self.state)
+                                .send()
+                                .await?;
+                        }
+                    }
+                }
                 println!("Error: {:?}", e);
                 return Err(e);
             }
