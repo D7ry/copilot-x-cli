@@ -133,6 +133,7 @@ impl CodeBlockBuilder {
      * (1. the current state of the code block builder,
      * (2. the code block if it was built, None otherwise. Each code block is built when the code block ends,
      * (3. the code line that just ended and the language of the code block if the code line ended , and the code block is still being built. This is useful for stream printing syntax-highlighted code lines.
+     * Thank you Koushik Sen for all the compiler knowledge lmao
      */
     pub fn build_codeblock_from_char(
         &mut self,
