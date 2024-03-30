@@ -1,21 +1,11 @@
 use clap::{App, Arg};
-use std::env;
 mod llm;
+mod syntax;
 use clipboard::ClipboardContext;
 use clipboard::ClipboardProvider;
 use llm::{CopilotChat, LLM};
 
 use std::io::{self, Write};
-
-use syntect::easy::HighlightLines;
-use syntect::highlighting::{Style, ThemeSet};
-use syntect::parsing::SyntaxSet;
-use syntect::util::as_24_bit_terminal_escaped;
-use termion::{color, cursor};
-
-use std::sync::{Arc, Mutex};
-
-use std::thread;
 
 #[derive(PartialEq, Debug)]
 enum CodeBlockState {
@@ -31,46 +21,6 @@ struct CodeBlockMeta {
     backticks_only_in_curr_line: bool,
 }
 
-fn lock_test() {
-    let lock = Arc::new(Mutex::new(()));
-
-    let lock_clone = Arc::clone(&lock);
-    let handle1 = thread::spawn(move || {
-        let _guard = lock_clone.lock().unwrap();
-        // Critical section starts
-        println!("Thread 1 is running");
-        // Critical section ends
-    });
-
-    let lock_clone = Arc::clone(&lock);
-    let handle2 = thread::spawn(move || {
-        let _guard = lock_clone.lock().unwrap();
-        // Critical section starts
-        println!("Thread 2 is running");
-        // Critical section ends
-    });
-
-    handle1.join().unwrap();
-    handle2.join().unwrap();
-}
-
-fn print_syntax_highlighted_code(code: &str, language: &str) {
-    // Load the syntaxes and themes
-    let ps = SyntaxSet::load_defaults_newlines();
-    let ts = ThemeSet::load_defaults();
-
-    // Use the Python syntax
-    let syntax = ps.find_syntax_by_extension("cpp").unwrap();
-    let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
-
-    let ranges: Vec<(Style, &str)> = h.highlight(code, &ps);
-    let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-    print!("{}", escaped);
-
-    print!("\x1b[0m"); // reset color
-
-    io::stdout().flush().unwrap();
-}
 
 static mut MAIN_STATE: CodeBlockMeta = CodeBlockMeta {
     backticks_count: 0,
@@ -147,7 +97,7 @@ fn llm_response_callback(response: &str) {
                                 println!("```");
                             }
                             // print out formatted line of code
-                            print_syntax_highlighted_code(
+                            syntax::print_syntax_highlighted_code_line(
                                 &MAIN_STATE.code_line_buf,
                                 &MAIN_STATE.code_block_type_buf,
                             );
@@ -196,6 +146,7 @@ fn main_loop(conversation_starter: Option<String>) {
                 match input.as_str() {
                     "\\y" => {
                         let code_blocks = llm.get_code_blocks();
+                        println!("Code blocks: {:?}", code_blocks);
                         if code_blocks.len() == 0 {
                             println!("No code blocks to yank");
                             print_separator();
