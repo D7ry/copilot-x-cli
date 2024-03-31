@@ -148,9 +148,6 @@ impl CodeBlockBuilder {
         // iterate over all chars, don't care if strs sent back are
         let mut code_block: Option<CodeBlock> = None;
         let mut code_line_and_language: Option<(String, String)> = None;
-        if ch == '\n' {
-            self.backticks_only_in_curr_line = true;
-        }
 
         // advance intermediate states
         match self.code_block_state {
@@ -193,6 +190,11 @@ impl CodeBlockBuilder {
                 } else {
                     // still counting backticks
                     match ch {
+                        ' ' => { // ignore spaces before backticks
+                            if self.backticks_count > 0 {
+                                self.code_block_state = CodeBlockBuilderState::None;
+                            }
+                        }
                         '`' => {
                             self.backticks_count += 1;
                         }
@@ -210,7 +212,7 @@ impl CodeBlockBuilder {
                 self.code_line_buf.push(ch);
                 match ch {
                     '\n' => {
-                        if self.backticks_count >= 3 {
+                        if self.backticks_only_in_curr_line && self.backticks_count >= 3 {
                             // end of code block
                             code_block = Some(CodeBlock {
                                 code: self.curr_code_block.code.clone(),
@@ -218,7 +220,6 @@ impl CodeBlockBuilder {
                             });
                             self.code_block_state = CodeBlockBuilderState::EndEatingCode;
                             self.code_block_type_buf.clear();
-                            self.backticks_count = 0;
                         }
                         code_line_and_language = Some((
                             self.code_line_buf.clone(),
@@ -226,6 +227,14 @@ impl CodeBlockBuilder {
                         )); // send back the code line
                         self.curr_code_block.code.push_str(&self.code_line_buf);
                         self.code_line_buf.clear();
+                        self.backticks_count = 0;
+                    }
+                    ' ' => {
+                        if self.backticks_count != 0 {
+                            self.backticks_only_in_curr_line = false;
+                            self.backticks_count = 0;
+                        }
+                        // ignore spaces before backticks
                     }
                     '`' => {
                         if self.backticks_only_in_curr_line {
@@ -234,10 +243,17 @@ impl CodeBlockBuilder {
                     }
                     _ => {
                         self.backticks_only_in_curr_line = false;
+                        self.backticks_count = 0;
                     }
                 }
             }
             _ => {}
+        }
+
+        // reset backticks flag if we hit a new line
+        if ch == '\n' {
+            self.backticks_only_in_curr_line = true;
+            self.backticks_count = 0;
         }
         return (&self.code_block_state, code_block, code_line_and_language);
     }
