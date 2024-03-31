@@ -31,6 +31,19 @@ fn llm_response_callback(response: &str) {
                 CodeBlockBuilderState::EatingCode => {
                     print_char = false;
                 }
+                CodeBlockBuilderState::BeginEatingCode => {
+                    print!("{}", cursor::Left(LINEBUFFER.len() as u16));
+                    print!("{}", clear::UntilNewline);
+                    std::io::stdout().flush().unwrap();
+                    syntax::print_syntax_highlighted_code_line(
+                        LINEBUFFER.as_str(),
+                        "md",
+                        Some(LINEBUFFER_UNFLUSHED_BEGIN),
+                    );
+                    LINEBUFFER.clear();
+                    LINEBUFFER_UNFLUSHED_BEGIN = 0;
+                    print_char = false;
+                }
                 _ => {
                     print_char = true;
                 }
@@ -190,14 +203,12 @@ fn main_loop(conversation_starter: Option<String>) {
         }
         let _response = llm.ask(&input, llm_response_callback);
 
-        
         print_separator();
         std::io::stdout().flush().unwrap();
 
         unsafe {
             assert!(LINEBUFFER.is_empty());
         }
-
     }
 }
 

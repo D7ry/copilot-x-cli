@@ -151,6 +151,17 @@ impl CodeBlockBuilder {
         if ch == '\n' {
             self.backticks_only_in_curr_line = true;
         }
+
+        // advance intermediate states
+        match self.code_block_state {
+            CodeBlockBuilderState::BeginEatingCode => {
+                self.code_block_state = CodeBlockBuilderState::EatingCode;
+            }
+            CodeBlockBuilderState::EndEatingCode => {
+                self.code_block_state = CodeBlockBuilderState::None;
+            }
+            _ => {}
+        }
         // println!("state: {:?}", MAIN_STATE.code_block_state);
         match self.code_block_state {
             // hopefully branch predictor carries performance
@@ -168,7 +179,7 @@ impl CodeBlockBuilder {
 
                     if ch == '\n' {
                         // we also ate this new line, so append this to the code block.
-                        self.code_block_state = CodeBlockBuilderState::EatingCode;
+                        self.code_block_state = CodeBlockBuilderState::BeginEatingCode;
                         self.backticks_count = 0;
                         self.curr_code_block.language_extension = MD_TYPE_TO_EXT
                             .get(self.code_block_type_buf.as_str())
@@ -205,7 +216,7 @@ impl CodeBlockBuilder {
                                 code: self.curr_code_block.code.clone(),
                                 language_extension: self.curr_code_block.language_extension.clone(),
                             });
-                            self.code_block_state = CodeBlockBuilderState::None;
+                            self.code_block_state = CodeBlockBuilderState::EndEatingCode;
                             self.code_block_type_buf.clear();
                             self.backticks_count = 0;
                         }
@@ -225,7 +236,8 @@ impl CodeBlockBuilder {
                         self.backticks_only_in_curr_line = false;
                     }
                 }
-            } // new line
+            }
+            _ => {}
         }
         return (&self.code_block_state, code_block, code_line_and_language);
     }
