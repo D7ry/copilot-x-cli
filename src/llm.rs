@@ -154,7 +154,7 @@ impl CopilotChat {
                     .as_str()
                     .expect("oauth_token not found");
 
-                println!("oauth_token: {}", oauth_token);
+                // println!("oauth_token: {}", oauth_token);
                 return Some(oauth_token.to_string());
             }
             Err(_) => {
@@ -166,7 +166,7 @@ impl CopilotChat {
 
     // update the jwt token in the request header, returns true if the token was updated
     fn update_jwt_token(&mut self) -> bool {
-        println!("Updating jwt token");
+        // println!("Updating jwt token");
         let rt = Runtime::new().unwrap();
         let jwt = rt.block_on(Self::get_jwt_token()).unwrap();
 
@@ -182,7 +182,7 @@ impl CopilotChat {
             "authorization",
             HeaderValue::from_str(&bearer_token).unwrap(),
         );
-        println!("{:?}",self.api_request_header);
+        // println!("{:?}",self.api_request_header);
         return true;
     }
 

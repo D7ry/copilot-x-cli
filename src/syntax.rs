@@ -6,6 +6,14 @@ use syntect::util::as_24_bit_terminal_escaped;
 
 use std::collections::HashMap;
 
+pub fn print_syntax_highlighted_code_block(code_block: &str, language: &str) {
+    let blocks = code_block.split("\n");
+
+    for block in blocks {
+        print_syntax_highlighted_code_line(block, language, None);
+    }
+}
+
 /**
  * Print syntax highlighted code to the terminal
  *
