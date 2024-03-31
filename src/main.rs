@@ -32,14 +32,15 @@ fn llm_response_callback(response: &str) {
                     print_char = false;
                 }
                 CodeBlockBuilderState::BeginEatingCode => {
-                    print!("{}", cursor::Left(LINEBUFFER.len() as u16));
-                    print!("{}", clear::UntilNewline);
-                    std::io::stdout().flush().unwrap();
-                    syntax::print_syntax_highlighted_code_line(
+                    let line = syntax::get_syntax_highlighted_code_line(
                         LINEBUFFER.as_str(),
                         "md",
                         Some(LINEBUFFER_UNFLUSHED_BEGIN),
                     );
+                    print!("{}", cursor::Left(LINEBUFFER.len() as u16));
+                    print!("{}", clear::UntilNewline);
+                    std::io::stdout().flush().unwrap();
+                    print!("{}", line);
                     LINEBUFFER.clear();
                     LINEBUFFER_UNFLUSHED_BEGIN = 0;
                     print_char = false;
@@ -74,27 +75,27 @@ fn llm_response_callback(response: &str) {
                     LINEBUFFER.push(ch);
                     // print the line buffer and set index to the end of the line buffer
                     if (LINEBUFFER.len() - LINEBUFFER_UNFLUSHED_BEGIN) >= w as usize {
+                        
+                        let line = syntax::get_syntax_highlighted_code_line(
+                            LINEBUFFER.as_str(),
+                            "md",
+                            Some(LINEBUFFER_UNFLUSHED_BEGIN),
+                        );
                         print!("{}", cursor::Left(LINEBUFFER.len() as u16));
                         print!("{}", clear::UntilNewline);
+                        print!("{}", line);
                         std::io::stdout().flush().unwrap();
-                        syntax::print_syntax_highlighted_code_line(
-                            LINEBUFFER.as_str(),
-                            "md",
-                            Some(LINEBUFFER_UNFLUSHED_BEGIN),
-                        );
                         LINEBUFFER_UNFLUSHED_BEGIN = LINEBUFFER.len();
                     } else if ch == '\n' {
-                        print!(
-                            "{}",
-                            cursor::Left((LINEBUFFER.len() - LINEBUFFER_UNFLUSHED_BEGIN) as u16)
-                        );
-                        print!("{}", clear::UntilNewline);
-                        std::io::stdout().flush().unwrap();
-                        syntax::print_syntax_highlighted_code_line(
+                        let line = syntax::get_syntax_highlighted_code_line(
                             LINEBUFFER.as_str(),
                             "md",
                             Some(LINEBUFFER_UNFLUSHED_BEGIN),
                         );
+                        print!("{}", cursor::Left(LINEBUFFER.len() as u16));
+                        print!("{}", clear::UntilNewline);
+                        print!("{}", line);
+                        std::io::stdout().flush().unwrap();
                         LINEBUFFER.clear();
                         LINEBUFFER_UNFLUSHED_BEGIN = 0;
                     } else {

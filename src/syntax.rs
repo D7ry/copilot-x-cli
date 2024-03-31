@@ -21,6 +21,13 @@ pub fn print_syntax_highlighted_code_block(code_block: &str, language: &str) {
  * @param language: &str - The language's extension(example: "rs" for Rust)
  */
 pub fn print_syntax_highlighted_code_line(code: &str, language: &str, begin: Option<usize>) {
+    let s = get_syntax_highlighted_code_line(code, language, begin);
+    print!("{}", s);
+    io::stdout().flush().unwrap();
+}
+
+
+pub fn get_syntax_highlighted_code_line(code: &str, language: &str, begin: Option<usize>) -> String {
     // Load the syntaxes and themes
     // println!("printing |{} : {} |", language, code);
     let ps = SyntaxSet::load_defaults_newlines();
@@ -36,7 +43,7 @@ pub fn print_syntax_highlighted_code_line(code: &str, language: &str, begin: Opt
 
     let mut h = HighlightLines::new(syntax, &ts.themes["base16-ocean.dark"]);
 
-    let mut ranges: Vec<(Style, &str)> = h.highlight(code, &ps);
+    let ranges: Vec<(Style, &str)> = h.highlight(code, &ps);
     // println!("ranges: {:?}", ranges);
 
     let mut ranges_post = Vec::new();
@@ -45,6 +52,7 @@ pub fn print_syntax_highlighted_code_line(code: &str, language: &str, begin: Opt
 
     // println!("begin: {:?}", begin);
 
+    // TODO: this can be done more efficiently?
     if let Some(begin) = begin {
         let begin = begin as i16;
         let mut start_appending = false;
@@ -69,9 +77,8 @@ pub fn print_syntax_highlighted_code_line(code: &str, language: &str, begin: Opt
         }
     }
     // println!("ranges_post: {:?}", ranges_post);
-    let escaped = as_24_bit_terminal_escaped(&ranges_post[..], false);
-    print!("{}", escaped);
+    let mut escaped = as_24_bit_terminal_escaped(&ranges_post[..], false);
 
-    print!("\x1b[0m"); // reset color
-    io::stdout().flush().unwrap();
+    escaped.push_str("\x1b[0m");
+    return escaped;
 }
