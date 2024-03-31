@@ -2,6 +2,7 @@ use clap::{App, Arg};
 mod codeblock_builder;
 mod llm;
 mod syntax;
+mod chat;
 use clipboard::ClipboardContext;
 use clipboard::ClipboardProvider;
 use codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
@@ -137,24 +138,7 @@ fn main_loop(conversation_starter: Option<String>) {
             if input.starts_with("\\") && input.len() == 2 {
                 match input.as_str() {
                     "\\y" => {
-                        let code_blocks = llm.get_code_blocks();
-                        println!("Code blocks: {:?}", code_blocks);
-                        if code_blocks.len() == 0 {
-                            println!("No code blocks to yank");
-                            print_separator();
-                            continue;
-                        }
-                        let last_code_block = code_blocks.into_iter().last().unwrap();
-                        let mut ctx: ClipboardContext = ClipboardProvider::new().unwrap();
-                        match ctx.set_contents(last_code_block.1.to_string()) {
-                            Ok(_) => {
-                                println!("Yanked {} code block to clipboard", last_code_block.0);
-                                print_separator();
-                            }
-                            Err(_) => {
-                                println!("Error: Could not yank code block to clipboard");
-                            }
-                        }
+                        println!("Yanking is wip!"); //TODO: add back yanking
                         continue;
                     }
                     "\\d" => {

@@ -1,19 +1,17 @@
-use crate::llm::LLMRole;
+use crate::llm::{LLMRole, LLMMessage, LLM, CopilotChat};
 use std::io::Write;
 
-struct Message {
-    owner: LLMRole,
-    content: String,
-}
 
 
 struct RuntimeState {
-    
+    line_buffer: String,
+    line_buffer_unflushed_begin: usize,
 }
 
 pub struct Chat {
-    messages: Vec<Message>,
+    messages: Vec<LLMMessage>,
     name: String,
+    llm: dyn LLM,
     state: RuntimeState,
 }
 
@@ -22,9 +20,23 @@ impl Chat {
         Chat {
             messages: Vec::new(),
             name: String::from("Chat"),
+            llm: CopilotChat::new(),
+            state : RuntimeState {
+                line_buffer: String::new(),
+                line_buffer_unflushed_begin: 0,
+            }
         }
     }
 
-    pub fn ask(&self, question: &str, out: ) -> String {
+    fn llm_response_callback(&self, response: &str) {
+        
+    }
+
+    /**
+     * Ask the assistant a question, and return the response
+     */
+    pub fn ask(&self, question: &str) -> String {
+
+        
     }
 }

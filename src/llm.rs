@@ -16,6 +16,11 @@ pub enum LLMRole {
     System,
 }
 
+pub struct LLMMessage {
+    owner: LLMRole,
+    content: String,
+}
+
 pub trait LLM {
     /**
      * Ask a question to the AI model
@@ -25,6 +30,9 @@ pub trait LLM {
      * @return the final response from the AI model
      */
     fn ask(&mut self, question: &str, callback: fn(&str)) -> String;
+
+    fn query<F: Fn()>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F);
+    
     fn append_message(&mut self, role: LLMRole, content: &String);
     //TODO: implement these
     // fn to_json(&self, json_path: &str);
@@ -95,6 +103,13 @@ impl LLM for CopilotChat {
             }
         }
         return code_blocks;
+    }
+
+    fn query(&mut self, chat_history: &Vec<LLMMessage>, message_sink: fn()) {
+        for message in chat_history {
+            self.append_message(message.owner, &message.content);
+        }
+        message_sink();
     }
 
     fn ask(&mut self, question: &str, callback: fn(&str)) -> String {
