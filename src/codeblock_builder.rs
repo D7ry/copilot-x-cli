@@ -82,7 +82,9 @@ lazy_static! {
 pub enum CodeBlockBuilderState {
     None,
     EatingBackTicksBegin,
+    BeginEatingCode,
     EatingCode,
+    EndEatingCode,
 }
 
 pub struct CodeBlock {

@@ -8,7 +8,7 @@ use codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
 use llm::{CopilotChat, LLM};
 
 use std::io::{self, Write};
-
+use termion::{clear, cursor, terminal_size};
 
 static mut CODEBLOCK_BUILDER: CodeBlockBuilder = CodeBlockBuilder::new();
 
@@ -17,7 +17,12 @@ fn print_separator() {
     io::stdout().flush().unwrap();
 }
 
+static mut LINEBUFFER: String = String::new();
+static mut LINEBUFFER_UNFLUSHED_BEGIN: usize = 0;
+
 fn llm_response_callback(response: &str) {
+    // println!("Response: {}", response);
+    // println!("callback!");
     for ch in response.chars() {
         let print_char: bool;
         unsafe {
@@ -41,13 +46,49 @@ fn llm_response_callback(response: &str) {
                     syntax::print_syntax_highlighted_code_line(
                         code_line_and_language.0.as_str(),
                         code_line_and_language.1.as_str(),
+                        Some(0),
                     );
                 }
                 None => {}
             }
         }
+
         if print_char {
-            print!("{}", ch);
+            unsafe {
+                let size = terminal_size();
+                let w = size.unwrap().0;
+                {
+                    LINEBUFFER.push(ch);
+                    // print the line buffer and set index to the end of the line buffer
+                    if (LINEBUFFER.len() - LINEBUFFER_UNFLUSHED_BEGIN) >= w as usize {
+                        print!("{}", cursor::Left(LINEBUFFER.len() as u16));
+                        print!("{}", clear::UntilNewline);
+                        std::io::stdout().flush().unwrap();
+                        syntax::print_syntax_highlighted_code_line(
+                            LINEBUFFER.as_str(),
+                            "md",
+                            Some(LINEBUFFER_UNFLUSHED_BEGIN),
+                        );
+                        LINEBUFFER_UNFLUSHED_BEGIN = LINEBUFFER.len();
+                    } else if ch == '\n' {
+                        print!(
+                            "{}",
+                            cursor::Left((LINEBUFFER.len() - LINEBUFFER_UNFLUSHED_BEGIN) as u16)
+                        );
+                        print!("{}", clear::UntilNewline);
+                        std::io::stdout().flush().unwrap();
+                        syntax::print_syntax_highlighted_code_line(
+                            LINEBUFFER.as_str(),
+                            "md",
+                            Some(LINEBUFFER_UNFLUSHED_BEGIN),
+                        );
+                        LINEBUFFER.clear();
+                        LINEBUFFER_UNFLUSHED_BEGIN = 0;
+                    } else {
+                        print!("{}", ch);
+                    }
+                }
+            }
         }
     }
 
@@ -102,6 +143,13 @@ fn main_loop(conversation_starter: Option<String>) {
                         }
                         continue;
                     }
+                    "\\d" => {
+                        // delete line
+                        print!("{}", clear::CurrentLine);
+                        io::stdout().flush().unwrap();
+
+                        continue;
+                    }
                     "\\p" => {
                         // do nothing, this is handled later
                     }
@@ -141,8 +189,15 @@ fn main_loop(conversation_starter: Option<String>) {
             CODEBLOCK_BUILDER.reset();
         }
         let _response = llm.ask(&input, llm_response_callback);
-        println!();
+
+        
         print_separator();
+        std::io::stdout().flush().unwrap();
+
+        unsafe {
+            assert!(LINEBUFFER.is_empty());
+        }
+
     }
 }
 

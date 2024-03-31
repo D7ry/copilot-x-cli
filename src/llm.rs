@@ -287,6 +287,23 @@ impl CopilotChat {
             }
         }
 
+        // push a new line if the respone doesn't end with a newline
+        let response_end_with_newline : bool;
+
+        match ai_response.chars().last() {
+            Some(ch) => {
+                response_end_with_newline = ch == '\n';
+            }
+            None => {
+                response_end_with_newline = false;
+            }
+        }
+
+        if !response_end_with_newline {
+            ai_response.push_str("\n");
+            callback(&"\n");
+        }
+
         return Ok(Some(ai_response));
     }
 
