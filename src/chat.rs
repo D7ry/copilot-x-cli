@@ -5,13 +5,14 @@ use std::io::{self, Write};
 use termion::{clear, cursor, terminal_size};
 
 use std::mem;
-struct ResponseHandler {
+struct LLMResponsePrinter {
     line_buffer: String,
     line_buffer_unflushed_begin: usize,
     codeblock_builder: CodeBlockBuilder,
+    line_width: usize,
 }
 
-impl ResponseHandler {
+impl LLMResponsePrinter {
     fn llm_response_callback(&mut self, response: &str) {
         for ch in response.chars() {
             let print_char: bool;
@@ -58,40 +59,36 @@ impl ResponseHandler {
             }
 
             if print_char {
-                unsafe {
-                    let size = terminal_size();
-                    let w = size.unwrap().0;
-                    {
-                        self.line_buffer.push(ch);
-                        // print the line buffer and set index to the end of the line buffer
-                        if (self.line_buffer.len() - self.line_buffer_unflushed_begin)
-                            >= w as usize
-                        {
-                            let line = syntax::get_syntax_highlighted_code_line(
-                                self.line_buffer.as_str(),
-                                "md",
-                                Some(self.line_buffer_unflushed_begin),
-                            );
-                            print!("{}", cursor::Left(self.line_buffer.len() as u16));
-                            print!("{}", clear::UntilNewline);
-                            print!("{}", line);
-                            std::io::stdout().flush().unwrap();
-                            self.line_buffer_unflushed_begin = self.line_buffer.len();
-                        } else if ch == '\n' {
-                            let line = syntax::get_syntax_highlighted_code_line(
-                                self.line_buffer.as_str(),
-                                "md",
-                                Some(self.line_buffer_unflushed_begin),
-                            );
-                            print!("{}", cursor::Left(self.line_buffer.len() as u16));
-                            print!("{}", clear::UntilNewline);
-                            print!("{}", line);
-                            std::io::stdout().flush().unwrap();
-                            self.line_buffer.clear();
-                            self.line_buffer_unflushed_begin = 0;
-                        } else {
-                            print!("{}", ch);
-                        }
+                let size = terminal_size();
+                let w = size.unwrap().0;
+                {
+                    self.line_buffer.push(ch);
+                    // print the line buffer and set index to the end of the line buffer
+                    if (self.line_buffer.len() - self.line_buffer_unflushed_begin) >= w as usize {
+                        let line = syntax::get_syntax_highlighted_code_line(
+                            self.line_buffer.as_str(),
+                            "md",
+                            Some(self.line_buffer_unflushed_begin),
+                        );
+                        print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                        print!("{}", clear::UntilNewline);
+                        print!("{}", line);
+                        std::io::stdout().flush().unwrap();
+                        self.line_buffer_unflushed_begin = self.line_buffer.len();
+                    } else if ch == '\n' {
+                        let line = syntax::get_syntax_highlighted_code_line(
+                            self.line_buffer.as_str(),
+                            "md",
+                            Some(self.line_buffer_unflushed_begin),
+                        );
+                        print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                        print!("{}", clear::UntilNewline);
+                        print!("{}", line);
+                        std::io::stdout().flush().unwrap();
+                        self.line_buffer.clear();
+                        self.line_buffer_unflushed_begin = 0;
+                    } else {
+                        print!("{}", ch);
                     }
                 }
             }
@@ -101,17 +98,16 @@ impl ResponseHandler {
     }
 }
 
-
-static mut RESPONSE_HANDLER: ResponseHandler = ResponseHandler {
+static mut RESPONSE_HANDLER: LLMResponsePrinter = LLMResponsePrinter {
     line_buffer: String::new(),
     line_buffer_unflushed_begin: 0,
     codeblock_builder: CodeBlockBuilder::new(),
+    line_width: 5,
 };
 
 pub struct Chat {
     chat_history: Vec<LLMMessage>,
     name: String,
-    state: ResponseHandler,
     copilot: CopilotChat,
 }
 
@@ -121,11 +117,6 @@ impl Chat {
             chat_history: Vec::new(),
             name: String::from("Chat"),
             copilot: CopilotChat::new(),
-            state: ResponseHandler {
-                line_buffer: String::new(),
-                line_buffer_unflushed_begin: 0,
-                codeblock_builder: CodeBlockBuilder::new(),
-            },
         }
     }
 
@@ -138,9 +129,9 @@ impl Chat {
             content: question.to_string(),
         });
 
-
         let response = self.copilot.query(&self.chat_history, |response| {
-            { // fuck it, let's get this to compile first
+            {
+                // fuck it, let's get this to compile first
                 unsafe {
                     RESPONSE_HANDLER.llm_response_callback(response);
                 }
