@@ -16,46 +16,44 @@ impl LLMResponsePrinter {
     fn llm_response_callback(&mut self, response: &str) {
         for ch in response.chars() {
             let print_char: bool;
-            unsafe {
-                let res = self.codeblock_builder.build_codeblock_from_char(ch);
-                match res.0 {
-                    CodeBlockBuilderState::EatingCode => {
-                        print_char = false;
-                    }
-                    CodeBlockBuilderState::BeginEatingCode => {
-                        let line = syntax::get_syntax_highlighted_code_line(
-                            self.line_buffer.as_str(),
-                            "md",
-                            Some(self.line_buffer_unflushed_begin),
-                        );
-                        print!("{}", cursor::Left(self.line_buffer.len() as u16));
-                        print!("{}", clear::UntilNewline);
-                        std::io::stdout().flush().unwrap();
-                        print!("{}", line);
-                        self.line_buffer.clear();
-                        self.line_buffer_unflushed_begin = 0;
-                        print_char = false;
-                    }
-                    _ => {
-                        print_char = true;
-                    }
+            let res = self.codeblock_builder.build_codeblock_from_char(ch);
+            match res.0 {
+                CodeBlockBuilderState::EatingCode => {
+                    print_char = false;
                 }
-                match res.1 {
-                    Some(code_block) => {
-                        //TODO: create app object to manage states
-                    }
-                    None => {}
+                CodeBlockBuilderState::BeginEatingCode => {
+                    let line = syntax::get_syntax_highlighted_code_line(
+                        self.line_buffer.as_str(),
+                        "md",
+                        Some(self.line_buffer_unflushed_begin),
+                    );
+                    print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                    print!("{}", clear::UntilNewline);
+                    std::io::stdout().flush().unwrap();
+                    print!("{}", line);
+                    self.line_buffer.clear();
+                    self.line_buffer_unflushed_begin = 0;
+                    print_char = false;
                 }
-                match res.2 {
-                    Some(code_line_and_language) => {
-                        syntax::print_syntax_highlighted_code_line(
-                            code_line_and_language.0.as_str(),
-                            code_line_and_language.1.as_str(),
-                            Some(0),
-                        );
-                    }
-                    None => {}
+                _ => {
+                    print_char = true;
                 }
+            }
+            match res.1 {
+                Some(code_block) => {
+                    //TODO: create app object to manage states
+                }
+                None => {}
+            }
+            match res.2 {
+                Some(code_line_and_language) => {
+                    syntax::print_syntax_highlighted_code_line(
+                        code_line_and_language.0.as_str(),
+                        code_line_and_language.1.as_str(),
+                        Some(0),
+                    );
+                }
+                None => {}
             }
 
             if print_char {
@@ -138,11 +136,35 @@ impl Chat {
             }
         });
 
-        self.chat_history.push(LLMMessage {
-            owner: LLMRole::Assistant,
-            content: response.clone(),
-        });
+        let ai_response;
+        match response {
+            Ok(msg) => {
+                self.chat_history.push(LLMMessage {
+                    owner: LLMRole::Assistant,
+                    content: msg.clone(),
+                });
+                ai_response = msg;
+            }
+            Err(e) => {
+                match e.status() {
+                    Some(status_code) => match status_code.as_u16() {
+                        400 => {
+                            println!(
+                                "Request rejected by API with code 400. Consider asking again."
+                            )
+                        }
+                        _ => {
+                            println!("Error: {}", status_code);
+                        }
+                    },
+                    None => {
+                        println!("Unknown error when executing copilot query.");
+                    }
+                }
+                ai_response = "".to_string();
+            }
+        }
 
-        return response;
+        return ai_response;
     }
 }

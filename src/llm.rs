@@ -41,9 +41,12 @@ impl Clone for LLMMessage {
 }
 
 pub trait LLM {
+    fn query<F: Fn(&str)>(
+        &mut self,
+        chat_history: &Vec<LLMMessage>,
+        message_sink: F,
+    ) -> Result<String, Error>;
 
-    fn query<F: Fn(&str)>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F) -> String;
-    
     //TODO: implement these
     // fn to_json(&self, json_path: &str);
     // fn from_json(&mut self, json_path: &str);
@@ -56,7 +59,7 @@ pub struct CopilotChat {
 }
 
 impl LLM for CopilotChat {
-    fn get_code_blocks(&self) -> HashMap<String, String> { 
+    fn get_code_blocks(&self) -> HashMap<String, String> {
         let mut code_blocks: HashMap<String, String> = HashMap::new();
         let messages = self.query_json["messages"].as_array().unwrap();
         for message in messages {
@@ -94,7 +97,11 @@ impl LLM for CopilotChat {
     }
 
     // TODO: re-implement jail breaking
-    fn query<F: Fn(&str)>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F) -> String {
+    fn query<F: Fn(&str)>(
+        &mut self,
+        chat_history: &Vec<LLMMessage>,
+        message_sink: F,
+    ) -> Result<String, Error> {
         self.query_json["messages"] = serde_json::json!([]); // clear the chat history
         for message in chat_history {
             let role_str = match message.owner {
@@ -118,37 +125,27 @@ impl LLM for CopilotChat {
             }
         }
 
-        
         let rt = Runtime::new().unwrap();
         let res = rt.block_on(self.stream_copilot_request(message_sink));
 
         match res {
             Ok(ai_output) => {
-                if ai_output.is_none() {
-                    return "Empty response".to_string();
-                }
-                let ai_output: String = ai_output.unwrap().to_string();
-                return ai_output;
+                return Result::Ok(ai_output.unwrap_or("".to_string()));
             }
             Err(e) => {
-                println!("Error: {:?}", e);
                 match e.status() {
-                    Some(status) => {
-                        println!("Status: {:?}", status);
-                        match status.as_u16() {
-                            401 => {
-                                self.update_jwt_token();
-                            }
-                            _ => {}
+                    Some(status) => match status.as_u16() {
+                        401 => {
+                            self.update_jwt_token();
                         }
-                    }
+                        _ => {}
+                    },
                     None => {}
                 }
-                return "Error".to_string();
+                return Result::Err(e);
             }
         }
     }
-
 }
 
 impl CopilotChat {
@@ -206,7 +203,10 @@ impl CopilotChat {
      *
      * @param question: the question to ask the copilot server
      */
-    async fn stream_copilot_request<F: Fn(&str)>(&mut self, callback: F) -> Result<Option<String>, Error> {
+    async fn stream_copilot_request<F: Fn(&str)>(
+        &mut self,
+        callback: F,
+    ) -> Result<Option<String>, Error> {
         let client = Client::new();
 
         let headers = self.api_request_header.clone();
@@ -302,7 +302,7 @@ impl CopilotChat {
         }
 
         // push a new line if the respone doesn't end with a newline
-        let response_end_with_newline : bool;
+        let response_end_with_newline: bool;
 
         match ai_response.chars().last() {
             Some(ch) => {

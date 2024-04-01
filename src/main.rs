@@ -16,7 +16,8 @@ use std::sync::{Arc, Mutex};
 static mut CODEBLOCK_BUILDER: CodeBlockBuilder = CodeBlockBuilder::new();
 
 fn print_separator() {
-    println!("----------------------------------------");
+    let line_width = terminal_size().unwrap().0 as usize;
+    println!("{}", "-".repeat(line_width));
     io::stdout().flush().unwrap();
 }
 
