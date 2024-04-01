@@ -93,6 +93,7 @@ impl LLM for CopilotChat {
         return code_blocks;
     }
 
+    // TODO: re-implement jail breaking
     fn query<F: Fn(&str)>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F) -> String {
         self.query_json["messages"] = serde_json::json!([]); // clear the chat history
         for message in chat_history {
@@ -269,7 +270,7 @@ impl CopilotChat {
         while let Some(item) = stream.next().await {
             let chunk = item?;
             // look for new line character, if found, print the buffer
-            let chunk_str = std::str::from_utf8(&chunk).unwrap();
+            let chunk_str = std::str::from_utf8(&chunk).unwrap_or("");
             buf.push_str(chunk_str);
             if chunk_str.contains("\n") {
                 // look for all the new lines

@@ -20,6 +20,11 @@ fn print_separator() {
     io::stdout().flush().unwrap();
 }
 
+fn print_prompt() {
+    print!(">> ");
+    io::stdout().flush().unwrap();
+}
+
 fn main_loop(conversation_starter: Option<String>) {
     let mut chat = Chat::new();
     let mut input: String = String::new();
@@ -32,6 +37,7 @@ fn main_loop(conversation_starter: Option<String>) {
     }
     loop {
         input.clear();
+        print_prompt();
         std::io::stdin().read_line(&mut input).unwrap();
         input = input.trim().to_string();
         if input.is_empty() {
