@@ -59,18 +59,22 @@ impl LLMResponsePrinter {
             if print_char {
                 let size = terminal_size();
                 let w = size.unwrap().0;
+                let line_width_limit = std::cmp::min(w as usize, self.line_width);
                 {
                     self.line_buffer.push(ch);
                     // print the line buffer and set index to the end of the line buffer
-                    if (self.line_buffer.len() - self.line_buffer_unflushed_begin) >= w as usize {
+                    if (self.line_buffer.len() - self.line_buffer_unflushed_begin)
+                        >= line_width_limit as usize
+                    {
                         let line = syntax::get_syntax_highlighted_code_line(
                             self.line_buffer.as_str(),
                             "md",
                             Some(self.line_buffer_unflushed_begin),
                         );
-                        print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                        print!("{}", cursor::Left(999));
                         print!("{}", clear::UntilNewline);
                         print!("{}", line);
+                        println!(); // insert newline
                         std::io::stdout().flush().unwrap();
                         self.line_buffer_unflushed_begin = self.line_buffer.len();
                     } else if ch == '\n' {
@@ -79,7 +83,7 @@ impl LLMResponsePrinter {
                             "md",
                             Some(self.line_buffer_unflushed_begin),
                         );
-                        print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                        print!("{}", cursor::Left(999));
                         print!("{}", clear::UntilNewline);
                         print!("{}", line);
                         std::io::stdout().flush().unwrap();
@@ -100,7 +104,7 @@ static mut RESPONSE_HANDLER: LLMResponsePrinter = LLMResponsePrinter {
     line_buffer: String::new(),
     line_buffer_unflushed_begin: 0,
     codeblock_builder: CodeBlockBuilder::new(),
-    line_width: 5,
+    line_width: 80,
 };
 
 pub struct Chat {
