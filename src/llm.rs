@@ -16,24 +16,34 @@ pub enum LLMRole {
     System,
 }
 
+impl Clone for LLMRole {
+    fn clone(&self) -> Self {
+        return match self {
+            LLMRole::User => LLMRole::User,
+            LLMRole::Assistant => LLMRole::Assistant,
+            LLMRole::System => LLMRole::System,
+        };
+    }
+}
+
 pub struct LLMMessage {
-    owner: LLMRole,
-    content: String,
+    pub owner: LLMRole,
+    pub content: String,
+}
+
+impl Clone for LLMMessage {
+    fn clone(&self) -> Self {
+        return LLMMessage {
+            owner: self.owner.clone(),
+            content: self.content.clone(),
+        };
+    }
 }
 
 pub trait LLM {
-    /**
-     * Ask a question to the AI model
-     *
-     * @param question: the question to ask the AI model
-     * @param callback: a callback function that will be called with partial responses
-     * @return the final response from the AI model
-     */
-    fn ask(&mut self, question: &str, callback: fn(&str)) -> String;
 
-    fn query<F: Fn()>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F);
+    fn query<F: Fn(&str)>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F) -> String;
     
-    fn append_message(&mut self, role: LLMRole, content: &String);
     //TODO: implement these
     // fn to_json(&self, json_path: &str);
     // fn from_json(&mut self, json_path: &str);
@@ -42,35 +52,13 @@ pub trait LLM {
 
 pub struct CopilotChat {
     api_request_header: HeaderMap,
-    state: Value, // a json value, conains all past conversation
+    query_json: Value, // a json value, conains all past conversation
 }
 
 impl LLM for CopilotChat {
-    fn append_message(&mut self, role: LLMRole, content: &String) {
-        let role_str = match role {
-            LLMRole::User => "user",
-            LLMRole::Assistant => "assistant",
-            LLMRole::System => "system",
-        };
-        match self.state["messages"].as_array_mut() {
-            None => {
-                self.state["messages"] = serde_json::json!([{
-                    "role": role_str,
-                    "content": content,
-                }]);
-            }
-            Some(messages) => {
-                messages.push(serde_json::json!({
-                    "role": role_str,
-                    "content": content,
-                }));
-            }
-        }
-    }
-
     fn get_code_blocks(&self) -> HashMap<String, String> { 
         let mut code_blocks: HashMap<String, String> = HashMap::new();
-        let messages = self.state["messages"].as_array().unwrap();
+        let messages = self.query_json["messages"].as_array().unwrap();
         for message in messages {
             let role = message["role"].as_str().unwrap();
             if role != "assistant" {
@@ -105,17 +93,33 @@ impl LLM for CopilotChat {
         return code_blocks;
     }
 
-    fn query(&mut self, chat_history: &Vec<LLMMessage>, message_sink: fn()) {
+    fn query<F: Fn(&str)>(&mut self, chat_history: &Vec<LLMMessage>, message_sink: F) -> String {
+        self.query_json["messages"] = serde_json::json!([]); // clear the chat history
         for message in chat_history {
-            self.append_message(message.owner, &message.content);
+            let role_str = match message.owner {
+                LLMRole::User => "user",
+                LLMRole::Assistant => "assistant",
+                LLMRole::System => "system",
+            };
+            match self.query_json["messages"].as_array_mut() {
+                None => {
+                    self.query_json["messages"] = serde_json::json!([{
+                        "role": role_str,
+                        "content": message.content,
+                    }]);
+                }
+                Some(messages) => {
+                    messages.push(serde_json::json!({
+                        "role": role_str,
+                        "content": message.content,
+                    }));
+                }
+            }
         }
-        message_sink();
-    }
 
-    fn ask(&mut self, question: &str, callback: fn(&str)) -> String {
-        self.append_message(LLMRole::User, &question.to_string());
+        
         let rt = Runtime::new().unwrap();
-        let res = rt.block_on(self.stream_copilot_request(question, callback));
+        let res = rt.block_on(self.stream_copilot_request(message_sink));
 
         match res {
             Ok(ai_output) => {
@@ -123,7 +127,6 @@ impl LLM for CopilotChat {
                     return "Empty response".to_string();
                 }
                 let ai_output: String = ai_output.unwrap().to_string();
-                self.append_message(LLMRole::Assistant, &ai_output);
                 return ai_output;
             }
             Err(e) => {
@@ -133,13 +136,7 @@ impl LLM for CopilotChat {
                         println!("Status: {:?}", status);
                         match status.as_u16() {
                             401 => {
-                                if self.update_jwt_token() {
-                                    return self.ask(question, callback); // retry the request
-                                }
-                            }
-                            400 => { // copilot API refuses to deal with non-coding questions, but
-                                // if we grill it eventually it will give us a response
-                                return self.ask("?", callback);
+                                self.update_jwt_token();
                             }
                             _ => {}
                         }
@@ -150,6 +147,7 @@ impl LLM for CopilotChat {
             }
         }
     }
+
 }
 
 impl CopilotChat {
@@ -207,7 +205,7 @@ impl CopilotChat {
      *
      * @param question: the question to ask the copilot server
      */
-    async fn stream_copilot_request(&mut self, question: &str, callback: fn(&str)) -> Result<Option<String>, Error> {
+    async fn stream_copilot_request<F: Fn(&str)>(&mut self, callback: F) -> Result<Option<String>, Error> {
         let client = Client::new();
 
         let headers = self.api_request_header.clone();
@@ -215,7 +213,7 @@ impl CopilotChat {
         let mut response = client
             .post("https://api.githubcopilot.com/chat/completions")
             .headers(headers)
-            .json(&self.state)
+            .json(&self.query_json)
             .send()
             .await?;
 
@@ -393,7 +391,7 @@ impl CopilotChat {
 
         let mut ret = CopilotChat {
             api_request_header: map,
-            state: serde_json::json!({
+            query_json: serde_json::json!({
                 "intent": true,
                 "messages": [],
                 "model": "gpt-4",

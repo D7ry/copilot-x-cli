@@ -8,9 +8,11 @@ use clipboard::ClipboardProvider;
 use codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
 use llm::{CopilotChat, LLM};
 
+use chat::Chat;
 use std::io::{self, Write};
 use termion::{clear, cursor, terminal_size};
 
+use std::sync::{Arc, Mutex};
 static mut CODEBLOCK_BUILDER: CodeBlockBuilder = CodeBlockBuilder::new();
 
 fn print_separator() {
@@ -18,110 +20,13 @@ fn print_separator() {
     io::stdout().flush().unwrap();
 }
 
-static mut LINEBUFFER: String = String::new();
-static mut LINEBUFFER_UNFLUSHED_BEGIN: usize = 0;
-
-fn llm_response_callback(response: &str) {
-    // println!("Response: {}", response);
-    // println!("callback!");
-    for ch in response.chars() {
-        let print_char: bool;
-        unsafe {
-            let res = CODEBLOCK_BUILDER.build_codeblock_from_char(ch);
-            match res.0 {
-                CodeBlockBuilderState::EatingCode => {
-                    print_char = false;
-                }
-                CodeBlockBuilderState::BeginEatingCode => {
-                    let line = syntax::get_syntax_highlighted_code_line(
-                        LINEBUFFER.as_str(),
-                        "md",
-                        Some(LINEBUFFER_UNFLUSHED_BEGIN),
-                    );
-                    print!("{}", cursor::Left(LINEBUFFER.len() as u16));
-                    print!("{}", clear::UntilNewline);
-                    std::io::stdout().flush().unwrap();
-                    print!("{}", line);
-                    LINEBUFFER.clear();
-                    LINEBUFFER_UNFLUSHED_BEGIN = 0;
-                    print_char = false;
-                }
-                _ => {
-                    print_char = true;
-                }
-            }
-            match res.1 {
-                Some(code_block) => {
-                    //TODO: create app object to manage states
-                }
-                None => {}
-            }
-            match res.2 {
-                Some(code_line_and_language) => {
-                    syntax::print_syntax_highlighted_code_line(
-                        code_line_and_language.0.as_str(),
-                        code_line_and_language.1.as_str(),
-                        Some(0),
-                    );
-                }
-                None => {}
-            }
-        }
-
-        if print_char {
-            unsafe {
-                let size = terminal_size();
-                let w = size.unwrap().0;
-                {
-                    LINEBUFFER.push(ch);
-                    // print the line buffer and set index to the end of the line buffer
-                    if (LINEBUFFER.len() - LINEBUFFER_UNFLUSHED_BEGIN) >= w as usize {
-                        
-                        let line = syntax::get_syntax_highlighted_code_line(
-                            LINEBUFFER.as_str(),
-                            "md",
-                            Some(LINEBUFFER_UNFLUSHED_BEGIN),
-                        );
-                        print!("{}", cursor::Left(LINEBUFFER.len() as u16));
-                        print!("{}", clear::UntilNewline);
-                        print!("{}", line);
-                        std::io::stdout().flush().unwrap();
-                        LINEBUFFER_UNFLUSHED_BEGIN = LINEBUFFER.len();
-                    } else if ch == '\n' {
-                        let line = syntax::get_syntax_highlighted_code_line(
-                            LINEBUFFER.as_str(),
-                            "md",
-                            Some(LINEBUFFER_UNFLUSHED_BEGIN),
-                        );
-                        print!("{}", cursor::Left(LINEBUFFER.len() as u16));
-                        print!("{}", clear::UntilNewline);
-                        print!("{}", line);
-                        std::io::stdout().flush().unwrap();
-                        LINEBUFFER.clear();
-                        LINEBUFFER_UNFLUSHED_BEGIN = 0;
-                    } else {
-                        print!("{}", ch);
-                    }
-                }
-            }
-        }
-    }
-
-    io::stdout().flush().unwrap();
-    // simply print the response
-}
-
 fn main_loop(conversation_starter: Option<String>) {
-    let mut llm = CopilotChat::new();
+    let mut chat = Chat::new();
     let mut input: String = String::new();
 
     match conversation_starter {
         Some(msg) => {
-            unsafe {
-                CODEBLOCK_BUILDER.reset();
-            }
-            let _response = llm.ask(&msg, llm_response_callback);
-            print_separator();
+            chat.ask(&msg);
         }
         None => {}
     }
@@ -183,17 +88,10 @@ fn main_loop(conversation_starter: Option<String>) {
         }
 
         print_separator();
-        unsafe {
-            CODEBLOCK_BUILDER.reset();
-        }
-        let _response = llm.ask(&input, llm_response_callback);
+        let _response = chat.ask(&input);
 
         print_separator();
         std::io::stdout().flush().unwrap();
-
-        unsafe {
-            assert!(LINEBUFFER.is_empty());
-        }
     }
 }
 
@@ -259,8 +157,8 @@ fn main() {
     if matches.is_present("single_query") {
         match conversation_starter {
             Some(msg) => {
-                let mut llm = CopilotChat::new();
-                let _response = llm.ask(&msg, llm_response_callback);
+                let mut copilot = Chat::new();
+                copilot.ask(&msg);
             }
             None => {
                 println!("Please provide a message to ask the model when doing single-time query");

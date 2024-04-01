@@ -1,42 +1,160 @@
-use crate::llm::{LLMRole, LLMMessage, LLM, CopilotChat};
-use std::io::Write;
+use crate::codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
+use crate::llm::{CopilotChat, LLMMessage, LLMRole, LLM};
+use crate::syntax;
+use std::io::{self, Write};
+use termion::{clear, cursor, terminal_size};
 
-
-
+use std::mem;
 struct RuntimeState {
     line_buffer: String,
     line_buffer_unflushed_begin: usize,
+    codeblock_builder: CodeBlockBuilder,
 }
 
+impl RuntimeState {
+    
+    fn llm_response_callback(&mut self, response: &str) {
+        for ch in response.chars() {
+            let print_char: bool;
+            unsafe {
+                let res = self.codeblock_builder.build_codeblock_from_char(ch);
+                match res.0 {
+                    CodeBlockBuilderState::EatingCode => {
+                        print_char = false;
+                    }
+                    CodeBlockBuilderState::BeginEatingCode => {
+                        let line = syntax::get_syntax_highlighted_code_line(
+                            self.line_buffer.as_str(),
+                            "md",
+                            Some(self.line_buffer_unflushed_begin),
+                        );
+                        print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                        print!("{}", clear::UntilNewline);
+                        std::io::stdout().flush().unwrap();
+                        print!("{}", line);
+                        self.line_buffer.clear();
+                        self.line_buffer_unflushed_begin = 0;
+                        print_char = false;
+                    }
+                    _ => {
+                        print_char = true;
+                    }
+                }
+                match res.1 {
+                    Some(code_block) => {
+                        //TODO: create app object to manage states
+                    }
+                    None => {}
+                }
+                match res.2 {
+                    Some(code_line_and_language) => {
+                        syntax::print_syntax_highlighted_code_line(
+                            code_line_and_language.0.as_str(),
+                            code_line_and_language.1.as_str(),
+                            Some(0),
+                        );
+                    }
+                    None => {}
+                }
+            }
+
+            if print_char {
+                unsafe {
+                    let size = terminal_size();
+                    let w = size.unwrap().0;
+                    {
+                        self.line_buffer.push(ch);
+                        // print the line buffer and set index to the end of the line buffer
+                        if (self.line_buffer.len() - self.line_buffer_unflushed_begin)
+                            >= w as usize
+                        {
+                            let line = syntax::get_syntax_highlighted_code_line(
+                                self.line_buffer.as_str(),
+                                "md",
+                                Some(self.line_buffer_unflushed_begin),
+                            );
+                            print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                            print!("{}", clear::UntilNewline);
+                            print!("{}", line);
+                            std::io::stdout().flush().unwrap();
+                            self.line_buffer_unflushed_begin = self.line_buffer.len();
+                        } else if ch == '\n' {
+                            let line = syntax::get_syntax_highlighted_code_line(
+                                self.line_buffer.as_str(),
+                                "md",
+                                Some(self.line_buffer_unflushed_begin),
+                            );
+                            print!("{}", cursor::Left(self.line_buffer.len() as u16));
+                            print!("{}", clear::UntilNewline);
+                            print!("{}", line);
+                            std::io::stdout().flush().unwrap();
+                            self.line_buffer.clear();
+                            self.line_buffer_unflushed_begin = 0;
+                        } else {
+                            print!("{}", ch);
+                        }
+                    }
+                }
+            }
+        }
+
+        io::stdout().flush().unwrap();
+    }
+}
+
+
+static mut state: RuntimeState = RuntimeState {
+    line_buffer: String::new(),
+    line_buffer_unflushed_begin: 0,
+    codeblock_builder: CodeBlockBuilder::new(),
+};
+
 pub struct Chat {
-    messages: Vec<LLMMessage>,
+    chat_history: Vec<LLMMessage>,
     name: String,
-    llm: dyn LLM,
     state: RuntimeState,
+    copilot: CopilotChat,
 }
 
 impl Chat {
     pub fn new() -> Chat {
         Chat {
-            messages: Vec::new(),
+            chat_history: Vec::new(),
             name: String::from("Chat"),
-            llm: CopilotChat::new(),
-            state : RuntimeState {
+            copilot: CopilotChat::new(),
+            state: RuntimeState {
                 line_buffer: String::new(),
                 line_buffer_unflushed_begin: 0,
-            }
+                codeblock_builder: CodeBlockBuilder::new(),
+            },
         }
     }
 
-    fn llm_response_callback(&self, response: &str) {
-        
-    }
 
     /**
      * Ask the assistant a question, and return the response
      */
-    pub fn ask(&self, question: &str) -> String {
+    pub fn ask(&mut self, question: &str) -> String {
+        self.chat_history.push(LLMMessage {
+            owner: LLMRole::User,
+            content: question.to_string(),
+        });
 
-        
+        let chat_history: Vec<LLMMessage> = self.chat_history.clone();
+
+        let response = CopilotChat::new().query(&chat_history, |response| {
+            { // fuck it, let's get this to compile first
+                unsafe {
+                    state.llm_response_callback(response);
+                }
+            }
+        });
+
+        self.chat_history.push(LLMMessage {
+            owner: LLMRole::Assistant,
+            content: response.clone(),
+        });
+
+        return response;
     }
 }
