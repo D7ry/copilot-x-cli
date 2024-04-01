@@ -5,14 +5,13 @@ use std::io::{self, Write};
 use termion::{clear, cursor, terminal_size};
 
 use std::mem;
-struct RuntimeState {
+struct ResponseHandler {
     line_buffer: String,
     line_buffer_unflushed_begin: usize,
     codeblock_builder: CodeBlockBuilder,
 }
 
-impl RuntimeState {
-    
+impl ResponseHandler {
     fn llm_response_callback(&mut self, response: &str) {
         for ch in response.chars() {
             let print_char: bool;
@@ -103,7 +102,7 @@ impl RuntimeState {
 }
 
 
-static mut state: RuntimeState = RuntimeState {
+static mut RESPONSE_HANDLER: ResponseHandler = ResponseHandler {
     line_buffer: String::new(),
     line_buffer_unflushed_begin: 0,
     codeblock_builder: CodeBlockBuilder::new(),
@@ -112,7 +111,7 @@ static mut state: RuntimeState = RuntimeState {
 pub struct Chat {
     chat_history: Vec<LLMMessage>,
     name: String,
-    state: RuntimeState,
+    state: ResponseHandler,
     copilot: CopilotChat,
 }
 
@@ -122,14 +121,13 @@ impl Chat {
             chat_history: Vec::new(),
             name: String::from("Chat"),
             copilot: CopilotChat::new(),
-            state: RuntimeState {
+            state: ResponseHandler {
                 line_buffer: String::new(),
                 line_buffer_unflushed_begin: 0,
                 codeblock_builder: CodeBlockBuilder::new(),
             },
         }
     }
-
 
     /**
      * Ask the assistant a question, and return the response
@@ -140,12 +138,11 @@ impl Chat {
             content: question.to_string(),
         });
 
-        let chat_history: Vec<LLMMessage> = self.chat_history.clone();
 
-        let response = CopilotChat::new().query(&chat_history, |response| {
+        let response = self.copilot.query(&self.chat_history, |response| {
             { // fuck it, let's get this to compile first
                 unsafe {
-                    state.llm_response_callback(response);
+                    RESPONSE_HANDLER.llm_response_callback(response);
                 }
             }
         });
