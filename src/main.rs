@@ -1,19 +1,18 @@
 use clap::{App, Arg};
+mod chat;
 mod codeblock_builder;
 mod llm;
 mod syntax;
-mod chat;
 use clipboard::ClipboardContext;
 use clipboard::ClipboardProvider;
 use codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
-use llm::{CopilotChat, LLM};
 
 use chat::Chat;
 use std::io::{self, Write};
 use termion::{clear, cursor, terminal_size};
 
 use std::sync::{Arc, Mutex};
-static mut CODEBLOCK_BUILDER: CodeBlockBuilder = CodeBlockBuilder::new();
+use std::thread;
 
 fn print_separator() {
     let line_width = terminal_size().unwrap().0 as usize;
@@ -47,7 +46,7 @@ fn main_loop(conversation_starter: Option<String>) {
 
         /* Handle special commands */
         {
-            if input.starts_with("\\") && input.len() == 2 {
+            if input.starts_with("\\") {
                 match input.as_str() {
                     "\\y" => {
                         println!("Yanking is wip!"); //TODO: add back yanking
@@ -68,7 +67,13 @@ fn main_loop(conversation_starter: Option<String>) {
                         println!("\\q - Quit");
                         println!("\\h - Help");
                         println!("\\y - Yank last code block to clipboard");
+                        println!("\\cl - Clear screen");
                         print_separator();
+                        continue;
+                    }
+                    "\\cl" => {
+                        print!("\x1B[2J\x1B[1;1H");
+                        io::stdout().flush().unwrap();
                         continue;
                     }
                     _ => {
@@ -99,6 +104,7 @@ fn main_loop(conversation_starter: Option<String>) {
 
         print_separator();
         std::io::stdout().flush().unwrap();
+
     }
 }
 
