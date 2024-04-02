@@ -46,7 +46,7 @@ fn main_loop(conversation_starter: Option<String>) {
 
         /* Handle special commands */
         {
-            if input.starts_with("\\") {
+            if input.starts_with("\\") && input.len() <= 3 {
                 match input.as_str() {
                     "\\y" => {
                         println!("Yanking is wip!"); //TODO: add back yanking
@@ -104,7 +104,6 @@ fn main_loop(conversation_starter: Option<String>) {
 
         print_separator();
         std::io::stdout().flush().unwrap();
-
     }
 }
 
