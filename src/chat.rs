@@ -7,6 +7,7 @@ use termion::{clear, cursor, terminal_size};
 use std::mem;
 struct LLMResponsePrinter {
     line_buffer: String,
+    word_buffer: String,
     line_buffer_unflushed_begin: usize,
     codeblock_builder: CodeBlockBuilder,
     line_width: usize,
@@ -15,11 +16,11 @@ struct LLMResponsePrinter {
 impl LLMResponsePrinter {
     fn llm_response_callback(&mut self, response: &str) {
         for ch in response.chars() {
-            let print_char: bool;
+            let char_is_code_block: bool;
             let res = self.codeblock_builder.build_codeblock_from_char(ch);
             match res.0 {
                 CodeBlockBuilderState::EatingCode => {
-                    print_char = false;
+                    char_is_code_block = false;
                 }
                 CodeBlockBuilderState::BeginEatingCode => {
                     let line = syntax::get_syntax_highlighted_code_line(
@@ -33,10 +34,10 @@ impl LLMResponsePrinter {
                     print!("{}", line);
                     self.line_buffer.clear();
                     self.line_buffer_unflushed_begin = 0;
-                    print_char = false;
+                    char_is_code_block = false;
                 }
                 _ => {
-                    print_char = true;
+                    char_is_code_block = true;
                 }
             }
             match res.1 {
@@ -56,42 +57,60 @@ impl LLMResponsePrinter {
                 None => {}
             }
 
-            if print_char {
+            if char_is_code_block {
+                // not code block. pirnt as markdown
+                fn print_line_buffer (line_buffer: &String, begin: usize) {
+                    let line = syntax::get_syntax_highlighted_code_line(
+                        line_buffer.as_str(),
+                        "md",
+                        Some(begin),
+                    );
+                    print!("{}", cursor::Left(999));
+                    print!("{}", clear::UntilNewline);
+                    print!("{}", line);
+                    std::io::stdout().flush().unwrap();
+                };
+
+                fn push_word_buffer (word_buffer_ref: &mut String, line_buffer_ref: &mut String) {
+                    line_buffer_ref.push_str(word_buffer_ref);
+                    word_buffer_ref.clear();
+                };
+
                 let size = terminal_size();
                 let w = size.unwrap().0;
                 let line_width_limit = std::cmp::min(w as usize, self.line_width);
-                {
-                    self.line_buffer.push(ch);
-                    // print the line buffer and set index to the end of the line buffer
-                    if (self.line_buffer.len() - self.line_buffer_unflushed_begin)
-                        >= line_width_limit as usize
-                    {
-                        let line = syntax::get_syntax_highlighted_code_line(
-                            self.line_buffer.as_str(),
-                            "md",
-                            Some(self.line_buffer_unflushed_begin),
-                        );
-                        print!("{}", cursor::Left(999));
-                        print!("{}", clear::UntilNewline);
-                        print!("{}", line);
-                        println!(); // insert newline
-                        std::io::stdout().flush().unwrap();
-                        self.line_buffer_unflushed_begin = self.line_buffer.len();
-                    } else if ch == '\n' {
-                        let line = syntax::get_syntax_highlighted_code_line(
-                            self.line_buffer.as_str(),
-                            "md",
-                            Some(self.line_buffer_unflushed_begin),
-                        );
-                        print!("{}", cursor::Left(999));
-                        print!("{}", clear::UntilNewline);
-                        print!("{}", line);
-                        std::io::stdout().flush().unwrap();
-                        self.line_buffer.clear();
-                        self.line_buffer_unflushed_begin = 0;
-                    } else {
-                        print!("{}", ch);
-                    }
+                let curr_line_size: usize =
+                    self.line_buffer.len() - self.line_buffer_unflushed_begin;
+                self.word_buffer.push(ch);
+
+                let curr_word_size: usize = self.word_buffer.len();
+                let line_too_long_with_new_word =
+                    curr_line_size + curr_word_size >= line_width_limit as usize;
+
+                let should_push_word = ch == ' ' || ch == '\n';
+
+                // pushing the word does not make the line too long
+                if should_push_word && !line_too_long_with_new_word {
+                    push_word_buffer(&mut self.word_buffer, &mut self.line_buffer);
+                }
+                // print the line buffer and set index to the end of the line buffer
+                if line_too_long_with_new_word {
+                    // we don't clear the buffer here here because we need the line buffer as context
+                    // infor for syntax highlighting
+                    print_line_buffer(&self.line_buffer, self.line_buffer_unflushed_begin);
+                    println!(); // manually insert a new line
+                    self.line_buffer_unflushed_begin = self.line_buffer.len();
+                } else if ch == '\n' {
+                    print_line_buffer(&self.line_buffer, self.line_buffer_unflushed_begin);
+                    self.line_buffer.clear();
+                    self.line_buffer_unflushed_begin = 0;
+                } else {
+                    print!("{}", ch); // simply prints out the char, which will get erased once
+                                      // the syntax-highlighted line is printed
+                }
+                // push the word after the line is printed
+                if should_push_word && line_too_long_with_new_word {
+                    push_word_buffer(&mut self.word_buffer, &mut self.line_buffer);
                 }
             }
         }
@@ -101,6 +120,7 @@ impl LLMResponsePrinter {
 }
 
 static mut RESPONSE_HANDLER: LLMResponsePrinter = LLMResponsePrinter {
+    word_buffer: String::new(),
     line_buffer: String::new(),
     line_buffer_unflushed_begin: 0,
     codeblock_builder: CodeBlockBuilder::new(),
