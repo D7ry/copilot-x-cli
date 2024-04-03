@@ -15,29 +15,37 @@ struct LLMResponsePrinter {
 
 impl LLMResponsePrinter {
     fn llm_response_callback(&mut self, response: &str) {
+        fn push_word_buffer(word_buffer_ref: &mut String, line_buffer_ref: &mut String) {
+            line_buffer_ref.push_str(word_buffer_ref);
+            word_buffer_ref.clear();
+        }
+
+        fn print_line_buffer(line_buffer: &String, begin: usize) {
+            let line =
+                syntax::get_syntax_highlighted_code_line(line_buffer.as_str(), "md", Some(begin));
+            print!("{}", cursor::Left(999));
+            print!("{}", clear::UntilNewline);
+            print!("{}", line);
+            std::io::stdout().flush().unwrap();
+        }
+
         for ch in response.chars() {
-            let char_is_code_block: bool;
+            let char_is_md: bool;
             let res = self.codeblock_builder.build_codeblock_from_char(ch);
             match res.0 {
                 CodeBlockBuilderState::EatingCode => {
-                    char_is_code_block = false;
+                    char_is_md = false;
                 }
                 CodeBlockBuilderState::BeginEatingCode => {
-                    let line = syntax::get_syntax_highlighted_code_line(
-                        self.line_buffer.as_str(),
-                        "md",
-                        Some(self.line_buffer_unflushed_begin),
-                    );
-                    print!("{}", cursor::Left(self.line_buffer.len() as u16));
-                    print!("{}", clear::UntilNewline);
-                    std::io::stdout().flush().unwrap();
-                    print!("{}", line);
+                    // print the ```(lang) line at the beginning of the code block
+                    push_word_buffer(&mut self.word_buffer, &mut self.line_buffer);
+                    print_line_buffer(&self.line_buffer, self.line_buffer_unflushed_begin);
                     self.line_buffer.clear();
                     self.line_buffer_unflushed_begin = 0;
-                    char_is_code_block = false;
+                    char_is_md = false;
                 }
                 _ => {
-                    char_is_code_block = true;
+                    char_is_md = true;
                 }
             }
             match res.1 {
@@ -57,24 +65,8 @@ impl LLMResponsePrinter {
                 None => {}
             }
 
-            if char_is_code_block {
+            if char_is_md {
                 // not code block. pirnt as markdown
-                fn print_line_buffer (line_buffer: &String, begin: usize) {
-                    let line = syntax::get_syntax_highlighted_code_line(
-                        line_buffer.as_str(),
-                        "md",
-                        Some(begin),
-                    );
-                    print!("{}", cursor::Left(999));
-                    print!("{}", clear::UntilNewline);
-                    print!("{}", line);
-                    std::io::stdout().flush().unwrap();
-                };
-
-                fn push_word_buffer (word_buffer_ref: &mut String, line_buffer_ref: &mut String) {
-                    line_buffer_ref.push_str(word_buffer_ref);
-                    word_buffer_ref.clear();
-                };
 
                 let size = terminal_size();
                 let w = size.unwrap().0;
