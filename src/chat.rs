@@ -2,9 +2,9 @@ use crate::codeblock_builder::{CodeBlockBuilder, CodeBlockBuilderState};
 use crate::llm::{CopilotChat, LLMMessage, LLMRole, LLM};
 use crate::syntax;
 use std::io::{self, Write};
+use std::sync::Mutex;
 use termion::{clear, cursor, terminal_size};
 
-use std::mem;
 struct LLMResponsePrinter {
     line_buffer: String,
     word_buffer: String,
@@ -111,18 +111,11 @@ impl LLMResponsePrinter {
     }
 }
 
-static mut RESPONSE_HANDLER: LLMResponsePrinter = LLMResponsePrinter {
-    word_buffer: String::new(),
-    line_buffer: String::new(),
-    line_buffer_unflushed_begin: 0,
-    codeblock_builder: CodeBlockBuilder::new(),
-    line_width: 80,
-};
-
 pub struct Chat {
     chat_history: Vec<LLMMessage>,
     name: String,
     copilot: CopilotChat,
+    response_handler: Mutex<LLMResponsePrinter>,
 }
 
 impl Chat {
@@ -131,6 +124,13 @@ impl Chat {
             chat_history: Vec::new(),
             name: String::from("Chat"),
             copilot: CopilotChat::new(),
+            response_handler: Mutex::new(LLMResponsePrinter {
+                word_buffer: String::new(),
+                line_buffer: String::new(),
+                line_buffer_unflushed_begin: 0,
+                codeblock_builder: CodeBlockBuilder::new(),
+                line_width: 80,
+            }),
         }
     }
 
@@ -144,12 +144,7 @@ impl Chat {
         });
 
         let response = self.copilot.query(&self.chat_history, |response| {
-            {
-                // fuck it, let's get this to compile first
-                unsafe {
-                    RESPONSE_HANDLER.llm_response_callback(response);
-                }
-            }
+            self.response_handler.lock().unwrap().llm_response_callback(response);
         });
 
         let ai_response;
